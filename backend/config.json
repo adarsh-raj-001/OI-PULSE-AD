@@ -1,0 +1,35 @@
+{
+  "_comment": "Tunable values only. Secrets (Dhan token, VAPID keys) live in .env, never here.",
+
+  "_dataSource_comment": "'nse_free' = no signup needed, temporary, NIFTY/BANKNIFTY only (SENSEX is BSE-listed, not on NSE's feed). 'dhan' = your real target: official, low-latency, supports SENSEX. You have F&O activated and real credentials now, so this is set to 'dhan'.",
+  "dataSource": "dhan",
+
+  "symbolsBySource": {
+    "nse_free": [
+      { "name": "NIFTY", "nse": { "symbol": "NIFTY" } },
+      { "name": "BANKNIFTY", "nse": { "symbol": "BANKNIFTY" } }
+    ],
+    "dhan": [
+      { "name": "NIFTY", "dhan": { "securityId": 13, "segment": "IDX_I" } },
+      { "name": "SENSEX", "dhan": { "securityId": 51, "segment": "IDX_I" } }
+    ]
+  },
+
+  "_strikesEachSide_comment": "How many strikes above/below the at-the-money strike to track. 3 = ATM + 3 up + 3 down = 7 strikes total.",
+  "strikesEachSide": 3,
+
+  "_pollIntervalMs_comment": "dhan's documented rate limit is 1 request per 3 seconds per instrument+expiry, safely spaced here at 3.5s.",
+  "pollIntervalMs": 3500,
+  "ssePushIntervalMs": 1500,
+  "historyMaxMs": 12960000,
+
+  "_thresholds_comment": "Notification fires when the combined OI change across the tracked 7-strike band (ATM +/-3) crosses this many contracts, for that window. Set per window since 5m moves are naturally smaller than 3h moves.",
+  "thresholds": {
+    "m5": 75000,
+    "m30": 200000,
+    "h3": 500000
+  },
+
+  "_notifyCooldownMs_comment": "Minimum gap between two notifications for the same symbol+window, so a sustained move above threshold doesn't spam you every poll cycle.",
+  "notifyCooldownMs": 600000
+}

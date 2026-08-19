@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>OI Pulse</title>
+
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="OI Pulse" />
+<meta name="theme-color" content="#0A0D12" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230A0D12'/%3E%3Cpath d='M20 65 L38 40 L52 55 L80 25' stroke='%2334D399' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg:#0A0D12; --surface:#12161F; --surface-alt:#171C26; --border:#232A38;
+    --text:#E8ECF1; --text-dim:#8A94A6; --text-faint:#454E5F;
+    --rise:#34D399; --fall:#FB6F6F; --accent:#4FD8E8; --warn:#F0B93D;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; height:100%; background:var(--bg); overscroll-behavior-y:none;}
+  body{font-family:'Inter',system-ui,sans-serif; color:var(--text); padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); -webkit-font-smoothing:antialiased;}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums;}
+
+  header{padding:18px 18px 12px; position:sticky; top:0; z-index:10; background:linear-gradient(var(--bg) 82%, transparent);}
+  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.18em; color:var(--text-faint); text-transform:uppercase; margin-bottom:2px;}
+  .titlerow{display:flex; align-items:center; justify-content:space-between;}
+  h1{font-size:21px; margin:0; font-weight:700; letter-spacing:-.01em;}
+  .status{display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.06em; color:var(--text-dim); text-transform:uppercase;}
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--text-faint); flex-shrink:0;}
+  .dot.live{background:var(--rise); animation:pulse 1.6s infinite;}
+  .dot.stale{background:var(--warn);} .dot.error{background:var(--fall);}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55);} 70%{box-shadow:0 0 0 8px rgba(52,211,153,0);} 100%{box-shadow:0 0 0 0 rgba(52,211,153,0);}}
+  .gear{background:none; border:none; color:var(--text-dim); font-size:17px; padding:6px; cursor:pointer;}
+  .heartbeat{height:2px; margin-top:14px; border-radius:2px; background:var(--border); overflow:hidden; position:relative;}
+  .heartbeat::after{content:''; position:absolute; top:0; left:-30%; width:30%; height:100%; background:linear-gradient(90deg, transparent, var(--accent), transparent); animation:sweep 2.6s linear infinite;}
+  @keyframes sweep{ to{ left:130%; } }
+
+  /* ---- NIFTY + SENSEX overview row ---- */
+  .overview{display:flex; gap:10px; margin:14px 18px 0;}
+  .ovcard{flex:1; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 14px; cursor:pointer; transition:border-color .15s;}
+  .ovcard.active{border-color:var(--accent);}
+  .ovcard .lbl{font-size:11px; color:var(--text-faint); letter-spacing:.08em; text-transform:uppercase; display:flex; justify-content:space-between; align-items:center;}
+  .ovcard .px{font-size:19px; font-weight:600; margin-top:4px;}
+  .ovcard .atm{font-size:11.5px; color:var(--text-dim); margin-top:2px;}
+
+  main{padding:14px 18px 32px; display:flex; flex-direction:column; gap:12px;}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px 16px 14px;}
+  .card-top{display:flex; justify-content:space-between; align-items:flex-start;}
+  .card-label{font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-dim); font-weight:600;}
+  .card-sub{font-size:11px; color:var(--text-faint); margin-top:2px;}
+
+  .atm-row{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-top:14px; padding:12px 13px; border-radius:11px;
+    background:var(--surface-alt); border:1px solid rgba(79,216,232,.35);
+  }
+  .atm-row .tag{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.08em; color:var(--accent); background:rgba(79,216,232,.12); padding:2px 6px; border-radius:5px; margin-right:8px;}
+  .atm-row .strike{font-size:15px; font-weight:600;}
+  .atm-row .legs{font-size:11px; color:var(--text-dim); margin-top:2px;}
+  .atm-row .num{font-size:17px; font-weight:600;}
+
+  .band-total{display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding:2px;}
+  .band-total .l{font-size:11.5px; color:var(--text-dim);}
+  .band-total .num{font-size:15px; font-weight:600;}
+
+  .expand-toggle{
+    display:flex; justify-content:center; align-items:center; gap:5px; width:100%;
+    background:none; border:none; border-top:1px solid var(--border); margin-top:10px; padding-top:9px;
+    color:var(--text-faint); font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.05em;
+    text-transform:uppercase; cursor:pointer;
+  }
+  .expand-toggle .chev{display:inline-block; transition:transform .15s;}
+  .expand-toggle.open .chev{transform:rotate(180deg);}
+
+  .band-list{margin-top:8px; display:flex; flex-direction:column; gap:1px; overflow:hidden; max-height:0; opacity:0; transition:max-height .2s ease, opacity .15s ease;}
+  .band-list.open{max-height:400px; opacity:1;}
+  .band-row{display:flex; justify-content:space-between; align-items:center; padding:8px 2px; border-bottom:1px solid var(--border);}
+  .band-row:last-child{border-bottom:none;}
+  .band-row .strikecol{display:flex; align-items:center; gap:8px;}
+  .band-row .offset{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-faint); width:22px;}
+  .band-row .strike{font-size:13px; color:var(--text);}
+  .band-row .legs{font-size:10.5px; color:var(--text-faint); margin-top:1px;}
+  .band-row .num{font-size:13.5px; font-weight:600;}
+
+  .rise{color:var(--rise);} .fall{color:var(--fall);} .neutral{color:var(--text-dim);}
+
+  .empty{text-align:center; color:var(--text-faint); font-size:13px; padding:14px 0 4px; font-family:'IBM Plex Mono',monospace;}
+  .demo-banner{margin:14px 18px 0; padding:10px 14px; border-radius:10px; background:rgba(240,185,61,.1); border:1px solid rgba(240,185,61,.35); color:var(--warn); font-size:12.5px; display:flex; justify-content:space-between; align-items:center; gap:10px;}
+  .demo-banner button{background:none; border:1px solid rgba(240,185,61,.5); color:var(--warn); border-radius:7px; padding:5px 9px; font-size:11px; font-family:inherit;}
+
+  .sheet-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:20; align-items:flex-end;}
+  .sheet-backdrop.open{display:flex;}
+  .sheet{width:100%; background:var(--surface-alt); border-radius:20px 20px 0 0; padding:20px 18px calc(24px + env(safe-area-inset-bottom)); border-top:1px solid var(--border);}
+  .sheet h2{font-size:15px; margin:0 0 12px;}
+  .sheet label{font-size:12px; color:var(--text-dim); display:block; margin-bottom:6px;}
+  .sheet input{width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:11px 12px; font-family:'IBM Plex Mono',monospace; font-size:13px; margin-bottom:14px;}
+  .sheet .row{display:flex; gap:10px;}
+  .sheet button.primary{flex:1; background:var(--accent); color:#04211F; border:none; border-radius:10px; padding:12px; font-weight:700; font-size:14px; cursor:pointer;}
+  .sheet button.secondary{flex:1; background:none; border:1px solid var(--border); color:var(--text-dim); border-radius:10px; padding:12px; font-size:14px; cursor:pointer;}
+  .notif-row{display:flex; justify-content:space-between; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:14px;}
+  .notif-row .t{font-size:13px;} .notif-row .s{font-size:11px; color:var(--text-faint); margin-top:2px;}
+  .notif-row button{background:var(--accent); color:#04211F; border:none; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;}
+  .notif-row button.off{background:none; border:1px solid var(--border); color:var(--text-dim);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="titlerow">
+    <div><div class="eyebrow">Dhan · Options</div><h1>OI Pulse</h1></div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="status"><span class="dot" id="dot"></span><span id="statusText">connecting</span></div>
+      <button class="gear" id="gearBtn" aria-label="Settings">⚙</button>
+    </div>
+  </div>
+  <div class="heartbeat"></div>
+</header>
+
+<div class="demo-banner" id="demoBanner" style="display:none;">
+  <span>Showing simulated data — backend not connected yet.</span>
+  <button id="demoConfigBtn">Set URL</button>
+</div>
+
+<div class="overview" id="overview"></div>
+
+<main id="cards"></main>
+
+<div class="sheet-backdrop" id="sheetBackdrop">
+  <div class="sheet">
+    <h2>Settings</h2>
+
+    <div class="notif-row">
+      <div>
+        <div class="t">Push notifications</div>
+        <div class="s" id="notifStatus">Alerts when OI near market crosses your threshold</div>
+      </div>
+      <button id="notifBtn">Enable</button>
+    </div>
+
+    <label for="urlInput">Backend server URL</label>
+    <input id="urlInput" placeholder="https://your-oi-backend.onrender.com" />
+    <div class="row">
+      <button class="secondary" id="cancelBtn">Cancel</button>
+      <button class="primary" id="saveBtn">Save & connect</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const WINDOWS = [
+  { key:'m5',  label:'5 Min' },
+  { key:'m30', label:'30 Min' },
+  { key:'h3',  label:'3 Hour' },
+];
+
+let symbol = 'NIFTY';
+let symbolsList = ['NIFTY','SENSEX']; // overwritten once we know the backend's real symbols
+let backendUrl = localStorage.getItem('oiPulseBackendUrl') || 'https://oi-pulse-backend-60u1.onrender.com';
+let es = null;
+let demoTimer = null;
+let latestData = {};
+let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
+
+const $ = (id) => document.getElementById(id);
+
+function fmtInt(n){ return (n===null||n===undefined) ? '—' : Math.round(n).toLocaleString('en-IN'); }
+function fmtSigned(n){
+  if (n===null||n===undefined) return '—';
+  const s = n>0?'+':n<0?'−':'';
+  return s + Math.abs(Math.round(n)).toLocaleString('en-IN');
+}
+function fmtAgo(ms){
+  if (!ms) return '';
+  const s = Math.round(ms/1000);
+  if (s<90) return s+'s window';
+  const m = Math.round(s/60);
+  if (m<90) return m+'m window';
+  return (m/60).toFixed(1)+'h window';
+}
+function trendClass(n){ return n>0?'rise':n<0?'fall':'neutral'; }
+function offsetLabel(o){ return o===0 ? 'ATM' : (o>0?'+'+o:o); }
+
+function renderOverview(){
+  const container = $('overview');
+  container.innerHTML = symbolsList.map(name => {
+    const p = latestData[name];
+    const px = p?.underlyingPrice ? Number(p.underlyingPrice).toLocaleString('en-IN',{maximumFractionDigits:2}) : '—';
+    const atm = p?.windows?.m5?.atmStrike ?? p?.windows?.m30?.atmStrike ?? p?.windows?.h3?.atmStrike ?? '—';
+    return `
+      <div class="ovcard ${name===symbol?'active':''}" data-sym="${name}">
+        <div class="lbl">${name}</div>
+        <div class="px mono">${px}</div>
+        <div class="atm">ATM ${atm}</div>
+      </div>`;
+  }).join('');
+}
+$('overview').addEventListener('click', (e) => {
+  const card = e.target.closest('.ovcard');
+  if (card) selectSymbol(card.dataset.sym);
+});
+
+function bandRow(row, isAtm){
+  const cls = trendClass(row.dTotal);
+  if (isAtm){
+    return `
+      <div class="atm-row">
+        <div>
+          <span class="tag">ATM</span><span class="strike mono">${row.strike}</span>
+          <div class="legs">CE ${fmtSigned(row.dCe)} · PE ${fmtSigned(row.dPe)}</div>
+        </div>
+        <div class="num mono ${cls}">${fmtSigned(row.dTotal)}</div>
+      </div>`;
+  }
+  return `
+    <div class="band-row">
+      <div class="strikecol">
+        <span class="offset mono">${offsetLabel(row.offset)}</span>
+        <div><span class="strike mono">${row.strike}</span><div class="legs mono">CE ${fmtSigned(row.dCe)} · PE ${fmtSigned(row.dPe)}</div></div>
+      </div>
+      <div class="num mono ${cls}">${fmtSigned(row.dTotal)}</div>
+    </div>`;
+}
+
+function renderCards(payload){
+  const container = $('cards');
+  container.innerHTML = '';
+
+  if (!payload || !payload.windows){
+    container.innerHTML = `<div class="empty">Gathering data — bands appear once enough history builds up.</div>`;
+    return;
+  }
+
+  for (const w of WINDOWS){
+    const win = payload.windows[w.key];
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    if (!win || !win.band?.length){
+      card.innerHTML = `
+        <div class="card-top">
+          <div><div class="card-label">${w.label} · Near ATM OI</div><div class="card-sub">Not enough history yet</div></div>
+        </div>`;
+      container.appendChild(card);
+      continue;
+    }
+
+    const atmRow = win.band.find(r => r.isATM);
+    const others = win.band.filter(r => !r.isATM).sort((a,b) => b.offset - a.offset); // +3..+1, -1..-3
+    const isOpen = expanded[w.key];
+    const totalCls = trendClass(win.bandDeltaTotal);
+
+    card.innerHTML = `
+      <div class="card-top">
+        <div>
+          <div class="card-label">${w.label} · Near ATM OI</div>
+          <div class="card-sub">${fmtAgo(win.actualSpanMs)} · strike step ${win.strikeStep}</div>
+        </div>
+      </div>
+      ${atmRow ? bandRow(atmRow, true) : ''}
+      <div class="band-total">
+        <span class="l">Combined change · ATM ±${others.length/2 || 3} strikes</span>
+        <span class="num mono ${totalCls}">${fmtSigned(win.bandDeltaTotal)}</span>
+      </div>
+      <button class="expand-toggle ${isOpen?'open':''}" data-win="${w.key}">
+        <span>${isOpen ? 'Hide' : 'Show'} the ${others.length} surrounding strikes</span><span class="chev">▾</span>
+      </button>
+      <div class="band-list ${isOpen?'open':''}">
+        ${others.map(r => bandRow(r, false)).join('')}
+      </div>
+    `;
+    container.appendChild(card);
+  }
+}
+
+$('cards').addEventListener('click', (e) => {
+  const btn = e.target.closest('.expand-toggle');
+  if (!btn) return;
+  const key = btn.dataset.win;
+  expanded[key] = !expanded[key];
+  renderCards(latestData[symbol]);
+});
+
+function setStatus(state){
+  $('dot').className = 'dot ' + (state==='connecting' ? '' : state);
+  $('statusText').textContent = state;
+}
+
+function update(data){
+  latestData = data;
+  renderOverview();
+  const payload = data[symbol];
+  renderCards(payload);
+  if (payload?.status) setStatus(payload.status==='live' ? 'live' : payload.status==='stale' ? 'stale' : 'error');
+}
+
+function selectSymbol(sym){
+  symbol = sym;
+  renderOverview();
+  renderCards(latestData[symbol]);
+}
+
+// ---- Live connection (SSE) ----
+async function connect(){
+  if (es) { es.close(); es = null; }
+  if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+  $('demoBanner').style.display = 'none';
+
+  if (!backendUrl){ startDemoMode(); return; }
+  setStatus('connecting');
+  try{
+    const cfgRes = await fetch(backendUrl.replace(/\/$/,'') + '/api/config');
+    const cfg = await cfgRes.json();
+    if (cfg?.symbols?.length){
+      symbolsList = cfg.symbols;
+      symbol = symbolsList[0];
+      latestData = {};
+      renderOverview();
+    }
+  } catch(_) { /* fall through — SSE will still try, overview just shows stale symbol list */ }
+
+  try{
+    es = new EventSource(backendUrl.replace(/\/$/,'') + '/api/stream');
+    es.onmessage = (e) => { try { update(JSON.parse(e.data)); } catch(_){} };
+    es.onerror = () => {
+      setStatus('error'); es.close();
+      setTimeout(() => { if (es && es.readyState === EventSource.CLOSED) startDemoMode(); }, 4000);
+    };
+  } catch(_) { startDemoMode(); }
+}
+
+// ---- Demo simulator ----
+function startDemoMode(){
+  $('demoBanner').style.display = 'flex';
+  setStatus('live');
+  symbolsList = ['NIFTY','SENSEX'];
+  if (!symbol || !symbolsList.includes(symbol)) symbol = 'NIFTY';
+  const cfg = {
+    NIFTY:  { px: 24850, step: 50,  hist: [] },
+    SENSEX: { px: 81200, step: 100, hist: [] },
+  };
+  function makeStrikes(px, step){
+    const atm = Math.round(px/step)*step;
+    const strikes = {};
+    for (let i=-6;i<=6;i++){
+      const s = atm + i*step;
+      strikes[s] = { ce: 2000000 + Math.random()*1500000, pe: 1800000 + Math.random()*1500000 };
+    }
+    return { atm, strikes };
+  }
+  function step(){
+    const now = Date.now();
+    const payload = {};
+    for (const sym of ['NIFTY','SENSEX']){
+      const c = cfg[sym];
+      c.px += (Math.random()-0.5) * (sym==='NIFTY'?12:35);
+      const { strikes } = makeStrikes(c.px, c.step);
+      // random-walk each strike's OI a bit from last snapshot if present
+      const lastSnap = c.hist[c.hist.length-1];
+      if (lastSnap){
+        for (const k of Object.keys(strikes)){
+          const prev = lastSnap.strikes[k];
+          if (prev){
+            strikes[k].ce = Math.max(0, prev.ce + (Math.random()-0.48)*20000);
+            strikes[k].pe = Math.max(0, prev.pe + (Math.random()-0.5)*20000);
+          }
+        }
+      }
+      c.hist.push({ t: now, underlyingPrice: c.px, strikes });
+      const cutoff = now - 3.2*60*60*1000;
+      while (c.hist.length && c.hist[0].t < cutoff) c.hist.shift();
+
+      const bandFor = (ms) => {
+        if (c.hist.length < 2) return null;
+        const cur = c.hist[c.hist.length-1];
+        const atm = Math.round(cur.underlyingPrice/c.step)*c.step;
+        let ref = c.hist[0];
+        for (const snap of c.hist){ if (snap.t <= now-ms) ref = snap; else break; }
+        if (ref.t === cur.t) return null;
+        const band = []; let bandDeltaTotal = 0;
+        for (let i=-3;i<=3;i++){
+          const strike = atm + i*c.step;
+          const curLeg = cur.strikes[strike]; if (!curLeg) continue;
+          const refLeg = ref.strikes[strike] || {ce:0,pe:0};
+          const dCe = curLeg.ce-refLeg.ce, dPe = curLeg.pe-refLeg.pe;
+          bandDeltaTotal += dCe+dPe;
+          band.push({ strike, isATM: i===0, offset:i, dCe, dPe, dTotal: dCe+dPe });
+        }
+        return { actualSpanMs: cur.t-ref.t, atmStrike: atm, strikeStep: c.step, band, bandDeltaTotal };
+      };
+
+      payload[sym] = {
+        symbol: sym, status:'live', updatedAt: now, underlyingPrice: c.px,
+        windows: { m5: bandFor(5*60*1000), m30: bandFor(30*60*1000), h3: bandFor(3*60*60*1000) },
+      };
+    }
+    update(payload);
+  }
+  step();
+  demoTimer = setInterval(step, 1500);
+}
+
+// ---- Push notifications ----
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function refreshNotifStatus(){
+  const btn = $('notifBtn'), status = $('notifStatus');
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)){
+    status.textContent = 'Not supported in this browser'; btn.style.display='none'; return;
+  }
+  if (Notification.permission === 'denied'){
+    status.textContent = 'Blocked — enable in iOS Settings > Notifications'; btn.style.display='none'; return;
+  }
+  try{
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub){ btn.textContent='Disable'; btn.classList.add('off'); status.textContent='Alerts are on'; }
+    else { btn.textContent='Enable'; btn.classList.remove('off'); status.textContent='Alerts when OI near market crosses your threshold'; }
+  } catch(_){}
+}
+
+async function enableNotifications(){
+  if (!backendUrl){ alert('Set your backend URL first — notifications are sent from there.'); return; }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return refreshNotifStatus();
+
+  const reg = await navigator.serviceWorker.register('sw.js');
+  const keyRes = await fetch(backendUrl.replace(/\/$/,'') + '/api/vapid-public-key');
+  const { publicKey } = await keyRes.json();
+  if (!publicKey){ alert('Server has no VAPID keys configured — see backend/.env.example.'); return; }
+
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
+  });
+  await fetch(backendUrl.replace(/\/$/,'') + '/api/subscribe', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sub),
+  });
+  refreshNotifStatus();
+}
+
+async function disableNotifications(){
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = reg && await reg.pushManager.getSubscription();
+  if (sub){
+    await fetch(backendUrl.replace(/\/$/,'') + '/api/unsubscribe', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ endpoint: sub.endpoint }),
+    });
+    await sub.unsubscribe();
+  }
+  refreshNotifStatus();
+}
+
+$('notifBtn').onclick = async () => {
+  const enabled = $('notifBtn').textContent === 'Disable';
+  if (enabled) await disableNotifications(); else await enableNotifications();
+};
+
+// ---- Settings sheet ----
+function openSheet(){ $('urlInput').value = backendUrl; $('sheetBackdrop').classList.add('open'); refreshNotifStatus(); }
+function closeSheet(){ $('sheetBackdrop').classList.remove('open'); }
+$('gearBtn').onclick = openSheet;
+$('demoConfigBtn').onclick = openSheet;
+$('cancelBtn').onclick = closeSheet;
+$('sheetBackdrop').onclick = (e) => { if (e.target === $('sheetBackdrop')) closeSheet(); };
+$('saveBtn').onclick = () => {
+  backendUrl = $('urlInput').value.trim();
+  localStorage.setItem('oiPulseBackendUrl', backendUrl);
+  closeSheet();
+  connect();
+};
+
+connect();
+</script>
+</body>
+</html>
