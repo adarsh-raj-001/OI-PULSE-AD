@@ -10,7 +10,7 @@ const DHAN_BASE = 'https://api.dhan.co/v2';
 const AUTH_URL = 'https://auth.dhan.co/app/generateAccessToken';
 
 const usingTotp = !!(secrets.dhanPin && secrets.dhanTotpSecret);
-system.out.println(usingTotp);
+System.out.println(usingTotp);
 
 // In-memory token cache — refreshed proactively before expiry, or
 // immediately on a 401 from Dhan.
@@ -33,7 +33,7 @@ async function refreshTokenViaTotp() {
   lastRefreshAttemptAt = now;
 
   const totp = authenticator.generate(secrets.dhanTotpSecret);
-  system.out.println("AR 776 - "+totp);
+  System.out.println("AR 776 - "+totp);
   const url = `${AUTH_URL}?dhanClientId=${encodeURIComponent(secrets.dhanClientId)}&pin=${encodeURIComponent(secrets.dhanPin)}&totp=${totp}`;
   const res = await fetch(url, { method: 'POST' });
   if (!res.ok) throw new Error(`TOTP token refresh: ${res.status} ${await res.text()}`);
