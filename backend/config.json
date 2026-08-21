@@ -2,7 +2,7 @@
   "_comment": "Tunable values only. Secrets (Dhan token, VAPID keys) live in .env, never here.",
 
   "_dataSource_comment": "'nse_free' = no signup needed, temporary, NIFTY/BANKNIFTY only (SENSEX is BSE-listed, not on NSE's feed). 'dhan' = your real target: official, low-latency, supports SENSEX. You have F&O activated and real credentials now, so this is set to 'dhan'.",
-  "dataSource": "nse_free",
+  "dataSource": "dhan",
 
   "symbolsBySource": {
     "nse_free": [
