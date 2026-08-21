@@ -22,7 +22,9 @@ async function refreshTokenViaTotp() {
   const res = await fetch(url, { method: 'POST' });
   if (!res.ok) throw new Error(`TOTP token refresh: ${res.status} ${await res.text()}`);
   const data = await res.json();
-  if (!data.accessToken) throw new Error(`TOTP token refresh: no accessToken in response`);
+  if (!data.accessToken) {
+    throw new Error(`TOTP token refresh: no accessToken in response. Raw response: ${JSON.stringify(data)}`);
+  }
   cachedToken = data.accessToken;
   // Refresh 30 minutes before Dhan's stated expiry, not exactly at it.
   tokenExpiresAt = data.expiryTime ? new Date(data.expiryTime).getTime() - 30 * 60 * 1000 : Date.now() + 23 * 60 * 60 * 1000;
