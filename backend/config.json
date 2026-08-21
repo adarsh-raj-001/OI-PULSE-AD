@@ -18,8 +18,8 @@
   "_strikesEachSide_comment": "How many strikes above/below the at-the-money strike to track. 3 = ATM + 3 up + 3 down = 7 strikes total.",
   "strikesEachSide": 3,
 
-  "_pollIntervalMs_comment": "dhan's documented rate limit is 1 request per 3 seconds per instrument+expiry, safely spaced here at 3.5s.",
-  "pollIntervalMs": 3500,
+  "_pollIntervalMs_comment": "dhan's documented rate limit is 1 request per 3 seconds per instrument+expiry, spaced here at 4s for extra headroom after hitting a rate limit once.",
+  "pollIntervalMs": 4000,
   "ssePushIntervalMs": 1500,
   "historyMaxMs": 12960000,
 
