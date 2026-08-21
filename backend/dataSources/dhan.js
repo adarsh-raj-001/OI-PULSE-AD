@@ -15,8 +15,22 @@ const usingTotp = !!(secrets.dhanPin && secrets.dhanTotpSecret);
 // immediately on a 401 from Dhan.
 let cachedToken = secrets.dhanAccessToken || null;
 let tokenExpiresAt = 0; // epoch ms; 0 means "unknown / refresh on first use"
+let lastRefreshAttemptAt = 0;
+const MIN_REFRESH_INTERVAL_MS = 90 * 1000; // Dhan allows a new token once per ~2 min; stay safely under that
 
 async function refreshTokenViaTotp() {
+  const now = Date.now();
+  if (now - lastRefreshAttemptAt < MIN_REFRESH_INTERVAL_MS) {
+    // Don't hammer Dhan's auth endpoint — reuse whatever we have, even if stale,
+    // rather than risk a rate-limit block. The next poll cycle will retry once
+    // the cooldown has passed.
+    if (cachedToken) return;
+    throw new Error(
+      `TOTP refresh on cooldown (${Math.round((MIN_REFRESH_INTERVAL_MS - (now - lastRefreshAttemptAt)) / 1000)}s left) and no cached token yet`
+    );
+  }
+  lastRefreshAttemptAt = now;
+
   const totp = authenticator.generate(secrets.dhanTotpSecret);
   const url = `${AUTH_URL}?dhanClientId=${encodeURIComponent(secrets.dhanClientId)}&pin=${encodeURIComponent(secrets.dhanPin)}&totp=${totp}`;
   const res = await fetch(url, { method: 'POST' });
