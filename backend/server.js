@@ -194,7 +194,7 @@ setInterval(broadcast, config.ssePushIntervalMs);
 // pair it with an external uptime pinger (UptimeRobot, cron-job.org, a
 // scheduled GitHub Action) for that, or move to a paid Render plan, which
 // disables spin-down entirely.
-const selfUrl = process.env.RENDER_EXTERNAL_URL;
+const selfUrl = process.env.RENDER_EXTERNAL_URL || 'https://oi-pulse-backend-60u1.onrender.com';
 if (selfUrl) {
   const KEEPALIVE_MS = 10 * 60 * 1000; // comfortably under the 15 min idle timeout
   setInterval(() => {
