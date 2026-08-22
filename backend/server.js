@@ -21,23 +21,33 @@ const history = Object.fromEntries(config.symbols.map((s) => [s.name, []]));
 const latest = Object.fromEntries(config.symbols.map((s) => [s.name, null]));
 
 
-// Finds the strike step from the actual chain (min gap between consecutive
-// strikes) rather than hardcoding it — NSE/BSE revise strike intervals
-// from time to time, this stays correct regardless.
-function strikeStep(strikes) {
-  const sorted = Object.keys(strikes).map(Number).sort((a, b) => a - b);
-  let min = Infinity;
-  for (let i = 1; i < sorted.length; i++) min = Math.min(min, sorted[i] - sorted[i - 1]);
-  return Number.isFinite(min) ? min : null;
+function sortedStrikes(strikes) {
+  return Object.keys(strikes)
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
 }
 
-function nearestStrike(strikes, price) {
-  let best = null, bestDiff = Infinity;
-  for (const s of Object.keys(strikes).map(Number)) {
-    const diff = Math.abs(s - price);
-    if (diff < bestDiff) { bestDiff = diff; best = s; }
+function nearestStrikeIndex(strikes, price) {
+  const numericPrice = Number(price);
+  if (!Number.isFinite(numericPrice) || !strikes.length) return null;
+
+  let bestIndex = 0;
+  let bestDiff = Math.abs(strikes[0] - numericPrice);
+  for (let i = 1; i < strikes.length; i++) {
+    const diff = Math.abs(strikes[i] - numericPrice);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestIndex = i;
+    }
   }
-  return best;
+  return bestIndex;
+}
+
+function bandStep(strikes) {
+  const steps = [];
+  for (let i = 1; i < strikes.length; i++) steps.push(strikes[i] - strikes[i - 1]);
+  return steps.length && steps.every((step) => step === steps[0]) ? steps[0] : null;
 }
 
 // Builds the ATM +/- N strike band for the *current* snapshot, then diffs
@@ -45,11 +55,13 @@ function nearestStrike(strikes, price) {
 function bandDelta(hist, nowMs, windowMs) {
   if (hist.length < 2) return null;
   const cur = hist[hist.length - 1];
-  const step = strikeStep(cur.strikes);
-  const atm = nearestStrike(cur.strikes, cur.underlyingPrice);
-  if (step === null || atm === null) return null;
-
+  const allStrikes = sortedStrikes(cur.strikes);
+  const atmIndex = nearestStrikeIndex(allStrikes, cur.underlyingPrice);
+  if (atmIndex === null) return null;
+  const atm = allStrikes[atmIndex];
   const targetT = nowMs - windowMs;
+  if (hist[0].t > targetT) return null; // do not label a shorter warm-up span as this window
+
   let ref = hist[0];
   for (const snap of hist) {
     if (snap.t <= targetT) ref = snap;
@@ -58,9 +70,13 @@ function bandDelta(hist, nowMs, windowMs) {
   if (ref.t === cur.t) return null; // not enough history yet for this window
 
   const band = [];
+  let bandDeltaCe = 0;
+  let bandDeltaPe = 0;
   let bandDeltaTotal = 0;
   for (let i = -config.strikesEachSide; i <= config.strikesEachSide; i++) {
-    const strike = atm + i * step;
+    const strikeIndex = atmIndex + i;
+    if (strikeIndex < 0 || strikeIndex >= allStrikes.length) continue;
+    const strike = allStrikes[strikeIndex];
     const curLeg = cur.strikes[strike];
     const refLeg = ref.strikes[strike];
     if (!curLeg) continue; // strike went out of chain range, skip
@@ -68,6 +84,8 @@ function bandDelta(hist, nowMs, windowMs) {
     const dCe = curLeg.ce - prevLeg.ce;
     const dPe = curLeg.pe - prevLeg.pe;
     const dTotal = dCe + dPe;
+    bandDeltaCe += dCe;
+    bandDeltaPe += dPe;
     bandDeltaTotal += dTotal;
     band.push({ strike, isATM: i === 0, offset: i, dCe, dPe, dTotal });
   }
@@ -77,8 +95,10 @@ function bandDelta(hist, nowMs, windowMs) {
     toT: cur.t,
     actualSpanMs: cur.t - ref.t,
     atmStrike: atm,
-    strikeStep: step,
+    strikeStep: bandStep(allStrikes),
     band,
+    bandDeltaCe,
+    bandDeltaPe,
     bandDeltaTotal,
   };
 }
@@ -99,7 +119,11 @@ function computePayload(name) {
   };
 }
 
+const pollInFlight = new Set();
+
 async function pollSymbol(sym) {
+  if (pollInFlight.has(sym.name)) return;
+  pollInFlight.add(sym.name);
   try {
     const summary = await source.fetchSnapshot(sym);
     const t = Date.now();
@@ -117,6 +141,8 @@ async function pollSymbol(sym) {
     console.error(`[poll:${sym.name}]`, err.message);
     if (latest[sym.name]) latest[sym.name].status = 'stale';
     else latest[sym.name] = { symbol: sym.name, status: 'error', error: err.message };
+  } finally {
+    pollInFlight.delete(sym.name);
   }
 }
 
@@ -194,7 +220,7 @@ setInterval(broadcast, config.ssePushIntervalMs);
 // pair it with an external uptime pinger (UptimeRobot, cron-job.org, a
 // scheduled GitHub Action) for that, or move to a paid Render plan, which
 // disables spin-down entirely.
-const selfUrl = process.env.RENDER_EXTERNAL_URL || 'https://oi-pulse-backend-60u1.onrender.com';
+const selfUrl = process.env.RENDER_EXTERNAL_URL || null;
 if (selfUrl) {
   const KEEPALIVE_MS = 60 * 1000; // comfortably under the 15 min idle timeout
   setInterval(() => {
