@@ -196,7 +196,7 @@ setInterval(broadcast, config.ssePushIntervalMs);
 // disables spin-down entirely.
 const selfUrl = process.env.RENDER_EXTERNAL_URL || 'https://oi-pulse-backend-60u1.onrender.com';
 if (selfUrl) {
-  const KEEPALIVE_MS = 10 * 60 * 1000; // comfortably under the 15 min idle timeout
+  const KEEPALIVE_MS = 60 * 1000; // comfortably under the 15 min idle timeout
   setInterval(() => {
     fetch(`${selfUrl.replace(/\/$/, '')}/api/health`).catch((err) => {
       console.error('[keepalive] self-ping failed:', err.message);
