@@ -185,10 +185,30 @@ function broadcast() {
 }
 setInterval(broadcast, config.ssePushIntervalMs);
 
+// ---- Keep-alive self-ping (Render's free tier spins a service down after
+// ~15 min with no inbound HTTP traffic). While the process is already
+// running, pinging our own public health endpoint periodically counts as
+// inbound traffic and stops it from ever going idle. RENDER_EXTERNAL_URL is
+// set automatically by Render, so this is a no-op anywhere else (local dev,
+// other hosts). This can't wake the service from an *already-cold* sleep —
+// pair it with an external uptime pinger (UptimeRobot, cron-job.org, a
+// scheduled GitHub Action) for that, or move to a paid Render plan, which
+// disables spin-down entirely.
+const selfUrl = process.env.RENDER_EXTERNAL_URL;
+if (selfUrl) {
+  const KEEPALIVE_MS = 10 * 60 * 1000; // comfortably under the 15 min idle timeout
+  setInterval(() => {
+    fetch(`${selfUrl.replace(/\/$/, '')}/api/health`).catch((err) => {
+      console.error('[keepalive] self-ping failed:', err.message);
+    });
+  }, KEEPALIVE_MS);
+}
+
 app.listen(config.port, () => {
   console.log(`OI Pulse backend listening on :${config.port}`);
   console.log(`Data source: ${source.label}`);
   console.log(`Symbols: ${config.symbols.map((s) => s.name).join(', ')}`);
   console.log(`Push notifications: ${notificationsEnabled ? 'enabled' : 'disabled (set VAPID keys in .env)'}`);
+  console.log(`Self-ping keepalive: ${selfUrl ? `enabled (${selfUrl})` : 'disabled (not running on Render)'}`);
   pollLoop();
 });
