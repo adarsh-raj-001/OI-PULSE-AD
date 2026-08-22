@@ -55,18 +55,22 @@
   .card-sub{font-size:11px; color:var(--text-faint); margin-top:2px;}
 
   .atm-row{
-    display:flex; justify-content:space-between; align-items:center;
     margin-top:14px; padding:12px 13px; border-radius:11px;
     background:var(--surface-alt); border:1px solid rgba(79,216,232,.35);
   }
   .atm-row .tag{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.08em; color:var(--accent); background:rgba(79,216,232,.12); padding:2px 6px; border-radius:5px; margin-right:8px;}
   .atm-row .strike{font-size:15px; font-weight:600;}
-  .atm-row .legs{font-size:11px; color:var(--text-dim); margin-top:2px;}
-  .atm-row .num{font-size:17px; font-weight:600;}
 
-  .band-total{display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding:2px;}
-  .band-total .l{font-size:11.5px; color:var(--text-dim);}
-  .band-total .num{font-size:15px; font-weight:600;}
+  .stat3{display:flex; justify-content:space-between; margin-top:9px;}
+  .stat3 .stat{flex:1; text-align:center;}
+  .stat3 .stat:first-child{text-align:left;}
+  .stat3 .stat:last-child{text-align:right;}
+  .stat3 .lbl{font-size:9.5px; letter-spacing:.08em; color:var(--text-faint); text-transform:uppercase; margin-bottom:2px;}
+  .stat3 .val{font-size:14px; font-weight:600;}
+  .atm-row .stat3 .val{font-size:16px;}
+
+  .band-total{margin-top:10px; padding:10px 2px; border-top:1px solid var(--border); border-bottom:1px solid var(--border);}
+  .band-total .l{font-size:11.5px; color:var(--text-dim); margin-bottom:2px;}
 
   .expand-toggle{
     display:flex; justify-content:center; align-items:center; gap:5px; width:100%;
@@ -79,13 +83,11 @@
 
   .band-list{margin-top:8px; display:flex; flex-direction:column; gap:1px; overflow:hidden; max-height:0; opacity:0; transition:max-height .2s ease, opacity .15s ease;}
   .band-list.open{max-height:400px; opacity:1;}
-  .band-row{display:flex; justify-content:space-between; align-items:center; padding:8px 2px; border-bottom:1px solid var(--border);}
+  .band-row{padding:10px 2px; border-bottom:1px solid var(--border);}
   .band-row:last-child{border-bottom:none;}
   .band-row .strikecol{display:flex; align-items:center; gap:8px;}
   .band-row .offset{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-faint); width:22px;}
   .band-row .strike{font-size:13px; color:var(--text);}
-  .band-row .legs{font-size:10.5px; color:var(--text-faint); margin-top:1px;}
-  .band-row .num{font-size:13.5px; font-weight:600;}
 
   .rise{color:var(--rise);} .fall{color:var(--fall);} .neutral{color:var(--text-dim);}
 
@@ -205,24 +207,26 @@ $('overview').addEventListener('click', (e) => {
 });
 
 function bandRow(row, isAtm){
-  const cls = trendClass(row.dTotal);
+  const stats = `
+    <div class="stat3">
+      <div class="stat"><div class="lbl">Call OI</div><div class="val mono ${trendClass(row.dCe)}">${fmtSigned(row.dCe)}</div></div>
+      <div class="stat"><div class="lbl">Put OI</div><div class="val mono ${trendClass(row.dPe)}">${fmtSigned(row.dPe)}</div></div>
+      <div class="stat"><div class="lbl">Total</div><div class="val mono ${trendClass(row.dTotal)}">${fmtSigned(row.dTotal)}</div></div>
+    </div>`;
   if (isAtm){
     return `
       <div class="atm-row">
-        <div>
-          <span class="tag">ATM</span><span class="strike mono">${row.strike}</span>
-          <div class="legs">CE ${fmtSigned(row.dCe)} · PE ${fmtSigned(row.dPe)}</div>
-        </div>
-        <div class="num mono ${cls}">${fmtSigned(row.dTotal)}</div>
+        <span class="tag">ATM</span><span class="strike mono">${row.strike}</span>
+        ${stats}
       </div>`;
   }
   return `
     <div class="band-row">
       <div class="strikecol">
         <span class="offset mono">${offsetLabel(row.offset)}</span>
-        <div><span class="strike mono">${row.strike}</span><div class="legs mono">CE ${fmtSigned(row.dCe)} · PE ${fmtSigned(row.dPe)}</div></div>
+        <span class="strike mono">${row.strike}</span>
       </div>
-      <div class="num mono ${cls}">${fmtSigned(row.dTotal)}</div>
+      ${stats}
     </div>`;
 }
 
@@ -250,6 +254,8 @@ function renderCards(payload){
     }
 
     const atmRow = win.band.find(r => r.isATM);
+    win.bandDeltaCe = win.band.reduce((s, r) => s + r.dCe, 0);
+    win.bandDeltaPe = win.band.reduce((s, r) => s + r.dPe, 0);
     const others = win.band.filter(r => !r.isATM).sort((a,b) => b.offset - a.offset); // +3..+1, -1..-3
     const isOpen = expanded[w.key];
     const totalCls = trendClass(win.bandDeltaTotal);
@@ -264,7 +270,11 @@ function renderCards(payload){
       ${atmRow ? bandRow(atmRow, true) : ''}
       <div class="band-total">
         <span class="l">Combined change · ATM ±${others.length/2 || 3} strikes</span>
-        <span class="num mono ${totalCls}">${fmtSigned(win.bandDeltaTotal)}</span>
+        <div class="stat3">
+          <div class="stat"><div class="lbl">Call OI</div><div class="val mono ${trendClass(win.bandDeltaCe)}">${fmtSigned(win.bandDeltaCe)}</div></div>
+          <div class="stat"><div class="lbl">Put OI</div><div class="val mono ${trendClass(win.bandDeltaPe)}">${fmtSigned(win.bandDeltaPe)}</div></div>
+          <div class="stat"><div class="lbl">Total</div><div class="val mono ${totalCls}">${fmtSigned(win.bandDeltaTotal)}</div></div>
+        </div>
       </div>
       <button class="expand-toggle ${isOpen?'open':''}" data-win="${w.key}">
         <span>${isOpen ? 'Hide' : 'Show'} the ${others.length} surrounding strikes</span><span class="chev">▾</span>
