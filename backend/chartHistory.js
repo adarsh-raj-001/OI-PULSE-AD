@@ -111,9 +111,18 @@ export function buildChartPoint(snapshot, previousPoint, strikesEachSide) {
   };
 }
 
-export function appendChartPoint(points, point, cutoffMs) {
+export function appendChartPoint(points, point, cutoffMs, eventBucketMs = 0) {
   if (!point) return points;
-  points.push(point);
+  const previous = points[points.length - 1];
+  if (previous && eventBucketMs > 0 && point.t - previous.t < eventBucketMs) {
+    // Lightweight Charts uses second-resolution timestamps. Replacing a nearby
+    // point keeps the latest live state in that second-sized event bucket,
+    // rather than emitting conflicting points at the same chart time.
+    point.t = previous.t;
+    points[points.length - 1] = point;
+  } else {
+    points.push(point);
+  }
   while (points.length && points[0].t < cutoffMs) points.shift();
   return points;
 }

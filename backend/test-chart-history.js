@@ -35,4 +35,12 @@ appendChartPoint(retained, first, 0);
 appendChartPoint(retained, second, 2_000);
 assert.deepEqual(retained, [second]);
 
+const eventPoints = [];
+appendChartPoint(eventPoints, first, 0, 1_000);
+const sameSecond = { ...second, t: 1_450 };
+appendChartPoint(eventPoints, sameSecond, 0, 1_000);
+assert.equal(eventPoints.length, 1, 'nearby event points should replace the current chart bucket');
+assert.equal(eventPoints[0].t, first.t, 'replacement preserves the original bucket timestamp');
+assert.equal(eventPoints[0].underlyingPrice, second.underlyingPrice);
+
 console.log('chart-history tests passed');

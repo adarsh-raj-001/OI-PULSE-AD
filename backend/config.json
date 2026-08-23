@@ -18,12 +18,16 @@
   "_strikesEachSide_comment": "How many strikes above/below the at-the-money strike to track. 3 = ATM + 3 up + 3 down = 7 strikes total.",
   "strikesEachSide": 3,
 
-  "_pollIntervalMs_comment": "Dhan documents one unique Option Chain request every 3 seconds per instrument+expiry. This is the live chart sample interval; pollSymbol prevents overlapping requests if a response is slow.",
+  "_pollIntervalMs_comment": "Dhan documents one unique Option Chain request every 3 seconds per instrument+expiry. This remains the full-chain reconciliation and expiry/ATM refresh interval; event-driven chart updates come from the active-band live feed when connected.",
   "pollIntervalMs": 3000,
-  "ssePushIntervalMs": 1500,
+  "ssePushIntervalMs": 500,
   "historyMaxMs": 12960000,
-  "_chartHistoryMaxMs_comment": "Compact near-ATM chart points retained independently from raw OI snapshots: 10 hours at the three-second live sample cadence.",
+  "_chartHistoryMaxMs_comment": "Compact near-ATM chart points retained independently from raw OI snapshots: 10 hours of event-driven Dhan live-feed updates, coalesced into short browser-safe time buckets.",
   "chartHistoryMaxMs": 36000000,
+  "_liveFeedEnabled_comment": "When dataSource is dhan, use the authenticated server-side Full Packet WebSocket for active ATM-band price/OI/volume/5-level depth. Option Chain REST remains every 3s for full-chain context and reconciliation.",
+  "liveFeedEnabled": true,
+  "_liveFeedEventBucketMs_comment": "Replace repeated chart points inside this short bucket; preserves responsive event-driven history without several same-second points competing for one chart timestamp.",
+  "liveFeedEventBucketMs": 1000,
 
   "_thresholds_comment": "Notification fires when the combined OI change across the tracked 7-strike band (ATM +/-3) crosses this many contracts, for that window. Set per window since 5m moves are naturally smaller than 3h moves.",
   "thresholds": {

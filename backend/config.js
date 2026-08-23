@@ -63,6 +63,8 @@ export const config = {
   ssePushIntervalMs: tunables.ssePushIntervalMs,
   historyMaxMs: tunables.historyMaxMs,
   chartHistoryMaxMs: tunables.chartHistoryMaxMs,
+  liveFeedEnabled: dataSource === 'dhan' && tunables.liveFeedEnabled === true && process.env.DISABLE_DHAN_LIVE_FEED !== 'true',
+  liveFeedEventBucketMs: Number(tunables.liveFeedEventBucketMs) || 1000,
   thresholds: tunables.thresholds,
   notifyCooldownMs: tunables.notifyCooldownMs,
 };
