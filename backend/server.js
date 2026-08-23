@@ -13,6 +13,7 @@ import * as dhanSource from './dataSources/dhan.js';
 import * as nseFreeSource from './dataSources/nseFree.js';
 import { buildMarketStrength } from './marketStrength.js';
 import { appendChartPoint, buildChartPoint } from './chartHistory.js';
+import { DhanLiveFeed } from './dhanLiveFeed.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
@@ -25,6 +26,14 @@ const chartHistory = Object.fromEntries(config.symbols.map((s) => [s.name, []]))
 
 // symbol -> latest computed payload sent to clients
 const latest = Object.fromEntries(config.symbols.map((s) => [s.name, null]));
+
+// The REST chain remains the complete reference snapshot. The live object is
+// a mutable copy of that chain whose active ATM band is updated by Dhan's Full
+// Packet stream between REST calls.
+const liveState = Object.fromEntries(config.symbols.map((s) => [s.name, null]));
+const liveInstrumentRefs = new Map();
+let liveFeedStatus = { state: config.liveFeedEnabled ? 'waiting' : 'disabled', lastEventAt: null };
+let liveFeed = null;
 
 
 function sortedStrikes(strikes) {
@@ -134,10 +143,118 @@ function computePayload(name) {
 
 function chartMeta(name, point) {
   return {
-    sampleIntervalMs: config.pollIntervalMs,
+    samplingMode: config.liveFeedEnabled ? 'event-driven' : 'snapshot',
+    eventBucketMs: config.liveFeedEnabled ? config.liveFeedEventBucketMs : config.pollIntervalMs,
+    fallbackIntervalMs: config.pollIntervalMs,
     retentionMs: config.chartHistoryMaxMs,
     point: point || chartHistory[name][chartHistory[name].length - 1] || null,
   };
+}
+
+function cloneSummary(summary) {
+  return structuredClone(summary);
+}
+
+function updatePayload(name, point, status = 'live') {
+  const payload = computePayload(name);
+  if (!payload) return;
+  payload.status = status;
+  payload.chart = chartMeta(name, point);
+  payload.liveFeed = { ...liveFeedStatus };
+  latest[name] = payload;
+  checkThresholds(name, payload.windows);
+}
+
+function recordSnapshot(name, summary, t, { eventDriven = false, status = 'live' } = {}) {
+  const hist = history[name];
+  const previous = hist[hist.length - 1] || null;
+  const shouldReplace = eventDriven && previous && t - previous.t < config.liveFeedEventBucketMs;
+  const snapshot = { t: shouldReplace ? previous.t : t, ...cloneSummary(summary) };
+
+  if (shouldReplace) hist[hist.length - 1] = snapshot;
+  else hist.push(snapshot);
+  const cutoff = t - config.historyMaxMs;
+  while (hist.length && hist[0].t < cutoff) hist.shift();
+
+  const points = chartHistory[name];
+  const replacingChartBucket = eventDriven && points.length > 0 && t - points[points.length - 1].t < config.liveFeedEventBucketMs;
+  const previousChartPoint = replacingChartBucket ? points[points.length - 2] || null : points[points.length - 1] || null;
+  const chartPoint = buildChartPoint(snapshot, previousChartPoint, config.strikesEachSide);
+  appendChartPoint(points, chartPoint, t - config.chartHistoryMaxMs, eventDriven ? config.liveFeedEventBucketMs : 0);
+  updatePayload(name, chartPoint, status);
+}
+
+function activeBandSubscriptions(sym, summary) {
+  const strikes = sortedStrikes(summary.strikes);
+  const atmIndex = nearestStrikeIndex(strikes, summary.underlyingPrice);
+  if (atmIndex === null) return [];
+  const optionSegment = sym.name === 'SENSEX' ? 'BSE_FNO' : 'NSE_FNO';
+  const subscriptions = [{
+    exchangeSegment: 'IDX_I',
+    securityId: sym.dhan.securityId,
+    symbol: sym.name,
+    kind: 'underlying',
+  }];
+  for (let offset = -config.strikesEachSide; offset <= config.strikesEachSide; offset += 1) {
+    const strike = strikes[atmIndex + offset];
+    const legs = summary.strikes[strike];
+    for (const side of ['ce', 'pe']) {
+      const securityId = Number(legs?.[side]?.securityId);
+      if (!Number.isFinite(securityId)) continue;
+      subscriptions.push({ exchangeSegment: optionSegment, securityId, symbol: sym.name, kind: 'option', strike, side });
+    }
+  }
+  return subscriptions;
+}
+
+function refreshLiveSubscriptions() {
+  if (!liveFeed) return;
+  const subscriptions = [];
+  liveInstrumentRefs.clear();
+  for (const sym of config.symbols) {
+    const summary = liveState[sym.name];
+    if (!summary || !sym.dhan) continue;
+    for (const instrument of activeBandSubscriptions(sym, summary)) {
+      const key = `${instrument.exchangeSegment}:${instrument.securityId}`;
+      liveInstrumentRefs.set(key, instrument);
+      subscriptions.push(instrument);
+    }
+  }
+  liveFeed.setSubscriptions(subscriptions);
+  liveFeed.start();
+}
+
+function applyLivePacket(packet) {
+  const ref = liveInstrumentRefs.get(`${packet.exchangeSegment}:${packet.securityId}`);
+  if (!ref) return;
+  const summary = liveState[ref.symbol];
+  if (!summary) return;
+
+  if (ref.kind === 'underlying') {
+    if (Number.isFinite(packet.lastPrice)) summary.underlyingPrice = packet.lastPrice;
+  } else {
+    const leg = summary.strikes?.[ref.strike]?.[ref.side];
+    if (!leg) return;
+    if (Number.isFinite(packet.lastPrice)) leg.lastPrice = packet.lastPrice;
+    if (Number.isFinite(packet.oi)) leg.oi = packet.oi;
+    if (Number.isFinite(packet.volume)) leg.volume = packet.volume;
+    const top = packet.depth?.[0];
+    if (top) {
+      leg.topBidPrice = top.bidPrice;
+      leg.topBidQuantity = top.bidQuantity;
+      leg.topAskPrice = top.askPrice;
+      leg.topAskQuantity = top.askQuantity;
+    }
+  }
+  recordSnapshot(ref.symbol, summary, packet.receivedAt, { eventDriven: true, status: 'live' });
+}
+
+if (config.liveFeedEnabled) {
+  liveFeed = new DhanLiveFeed({
+    getCredentials: dhanSource.getLiveFeedCredentials,
+    onPacket: applyLivePacket,
+    onStatus: (status) => { liveFeedStatus = status; },
+  });
 }
 
 const pollInFlight = new Set();
@@ -148,21 +265,20 @@ async function pollSymbol(sym) {
   try {
     const summary = await source.fetchSnapshot(sym);
     const t = Date.now();
-    const hist = history[sym.name];
-    hist.push({ t, ...summary });
-    const cutoff = t - config.historyMaxMs;
-    while (hist.length && hist[0].t < cutoff) hist.shift();
-
-    const points = chartHistory[sym.name];
-    const chartPoint = buildChartPoint({ t, ...summary }, points[points.length - 1], config.strikesEachSide);
-    appendChartPoint(points, chartPoint, t - config.chartHistoryMaxMs);
-
-    const payload = computePayload(sym.name);
-    payload.status = 'live';
-    payload.chart = chartMeta(sym.name, chartPoint);
-    latest[sym.name] = payload;
-
-    checkThresholds(sym.name, payload.windows);
+    const hasRetainedHistory = history[sym.name].length > 0;
+    liveState[sym.name] = cloneSummary(summary);
+    refreshLiveSubscriptions();
+    const streamOwnsHistory = config.liveFeedEnabled && liveFeedStatus.state === 'connected' && hasRetainedHistory;
+    if (streamOwnsHistory) {
+      // The chain call refreshes expiry, full-chain context, IV, and the active
+      // security-ID universe. Do not manufacture a graph point on its timer
+      // while the stream is healthy; the next real feed event owns history.
+      updatePayload(sym.name, chartHistory[sym.name][chartHistory[sym.name].length - 1], 'live');
+    } else {
+      // First snapshot and every degraded/live-feed-reconnect period retain the
+      // existing REST fallback rather than leaving the dashboard empty.
+      recordSnapshot(sym.name, liveState[sym.name], t, { status: 'live' });
+    }
   } catch (err) {
     console.error(`[poll:${sym.name}]`, err.message);
     if (latest[sym.name]) latest[sym.name].status = 'stale';
@@ -177,9 +293,11 @@ function pollLoop() {
   // instrument+expiry), safe to poll in parallel. NSE free source: polled
   // less aggressively (see config.json) to avoid tripping its informal
   // rate limiting, also fine in parallel since it's two separate requests.
-  setInterval(() => {
+  const pollAll = () => {
     for (const sym of config.symbols) pollSymbol(sym);
-  }, config.pollIntervalMs);
+  };
+  pollAll();
+  setInterval(pollAll, config.pollIntervalMs);
 }
 
 // ---- HTTP layer ----
@@ -195,7 +313,13 @@ app.get('/api/config', (_req, res) => {
     dataSourceLabel: source.label,
     symbols: config.symbols.map((s) => s.name),
     strikesEachSide: config.strikesEachSide,
-    chart: { sampleIntervalMs: config.pollIntervalMs, retentionMs: config.chartHistoryMaxMs },
+    chart: {
+      samplingMode: config.liveFeedEnabled ? 'event-driven' : 'snapshot',
+      eventBucketMs: config.liveFeedEnabled ? config.liveFeedEventBucketMs : config.pollIntervalMs,
+      fallbackIntervalMs: config.pollIntervalMs,
+      retentionMs: config.chartHistoryMaxMs,
+    },
+    liveFeed: { enabled: config.liveFeedEnabled, ...liveFeedStatus },
     thresholds: config.thresholds,
     notificationsEnabled,
   });
@@ -219,7 +343,9 @@ app.get('/api/chart/:symbol', (req, res) => {
     : chartHistory[name];
   res.json({
     symbol: name,
-    sampleIntervalMs: config.pollIntervalMs,
+    samplingMode: config.liveFeedEnabled ? 'event-driven' : 'snapshot',
+    eventBucketMs: config.liveFeedEnabled ? config.liveFeedEventBucketMs : config.pollIntervalMs,
+    fallbackIntervalMs: config.pollIntervalMs,
     retentionMs: config.chartHistoryMaxMs,
     points,
   });
@@ -283,6 +409,7 @@ app.listen(config.port, () => {
   console.log(`Data source: ${source.label}`);
   console.log(`Symbols: ${config.symbols.map((s) => s.name).join(', ')}`);
   console.log(`Push notifications: ${notificationsEnabled ? 'enabled' : 'disabled (set VAPID keys in .env)'}`);
+  console.log(`Dhan live feed: ${config.liveFeedEnabled ? 'enabled (active ATM-band Full Packet stream)' : 'disabled (REST Option Chain only)'}`);
   console.log(`Self-ping keepalive: ${selfUrl && !selfPingDisabled ? `enabled (${selfUrl})` : 'disabled (set SELF_PING_URL or use Render)'}`);
   pollLoop();
 });

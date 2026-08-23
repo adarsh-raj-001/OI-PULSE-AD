@@ -25,6 +25,14 @@ assert.match(html, /Bid − ask/);
 assert.match(html, /function loadChartHistory\(symbolName\)/);
 assert.match(html, /\/api\/chart\//);
 assert.match(html, /function ingestChartPoint\(point, symbolName/);
-assert.match(html, /3-second OI change/);
+assert.match(html, /function chartCadenceText\(meta=\{\}\)/);
+assert.match(html, /live events/);
+assert.match(html, /event-driven points/);
+assert.match(html, /lastValueVisible:false/);
+assert.match(html, /priceLineVisible:false/);
+assert.match(html, /horzTouchDrag:true, vertTouchDrag:true/);
+assert.match(html, /touch-action:none/);
+assert.doesNotMatch(html, /class="heartbeat"/);
+assert.doesNotMatch(html, /3-second OI change/);
 
 console.log('frontend connection, aggregate, and chart contracts passed');

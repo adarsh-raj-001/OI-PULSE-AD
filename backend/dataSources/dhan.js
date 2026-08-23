@@ -33,6 +33,7 @@ function fieldNumber(fields, ...names) {
 
 function normalizeLeg(leg) {
   return {
+    securityId: fieldNumber(leg, 'security_id', 'securityId'),
     oi: fieldNumber(leg, 'oi') ?? 0,
     previousOi: fieldNumber(leg, 'previous_oi', 'previousOi'),
     lastPrice: fieldNumber(leg, 'last_price', 'lastPrice'),
@@ -163,7 +164,17 @@ export async function fetchSnapshot(sym) {
   if (!Object.keys(strikes).length) {
     throw new Error(`optionchain ${sym.name}: response contains no valid strikes`);
   }
-  return { underlyingPrice: lastPrice, strikes };
+  return { underlyingPrice: lastPrice, strikes, expiry: expiryCache[sym.name] };
+}
+
+// Reuses the same cached, TOTP-capable Dhan token path as the REST Option
+// Chain adapter. The WebSocket client imports this rather than owning a second
+// refresh mechanism, so a reconnect cannot expose a stale browser-side token.
+export async function getLiveFeedCredentials(forceRefresh = false) {
+  return {
+    clientId: secrets.dhanClientId,
+    accessToken: await getAccessToken(forceRefresh),
+  };
 }
 
 export const label = usingTotp ? 'Dhan (official, TOTP auto-refresh)' : 'Dhan (official, static token)';
