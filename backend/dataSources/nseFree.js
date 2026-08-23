@@ -22,6 +22,25 @@ let cookieJar = '';
 let cookieFetchedAt = 0;
 const COOKIE_TTL_MS = 4 * 60 * 1000; // refresh every 4 min, before NSE expires the session
 
+function finite(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeLeg(leg) {
+  return {
+    oi: finite(leg?.openInterest) ?? 0,
+    previousOi: finite(leg?.changeinOpenInterest) === null ? null : (finite(leg?.openInterest) ?? 0) - finite(leg?.changeinOpenInterest),
+    lastPrice: finite(leg?.lastPrice),
+    volume: finite(leg?.totalTradedVolume),
+    impliedVolatility: finite(leg?.impliedVolatility),
+    topBidPrice: finite(leg?.bidprice),
+    topBidQuantity: finite(leg?.bidQty),
+    topAskPrice: finite(leg?.askPrice),
+    topAskQuantity: finite(leg?.askQty),
+  };
+}
+
 function collectSetCookies(res) {
   // Node's fetch Headers collapses repeated set-cookie into one string via
   // .get(), but keeps separate entries when iterated — use that to get all of them.
@@ -68,8 +87,8 @@ export async function fetchSnapshot(sym) {
   for (const row of records.data || []) {
     if (nearestExpiry && row.expiryDate !== nearestExpiry) continue; // records.data mixes all expiries
     strikes[row.strikePrice] = {
-      ce: row.CE?.openInterest ?? 0,
-      pe: row.PE?.openInterest ?? 0,
+      ce: normalizeLeg(row.CE),
+      pe: normalizeLeg(row.PE),
     };
   }
   return { underlyingPrice: records.underlyingValue ?? null, strikes };

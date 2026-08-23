@@ -77,6 +77,29 @@
   .aggregate .v{margin-top:3px; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:var(--text);}
   .strength-foot{margin-top:10px; font-size:10.5px; line-height:1.45; color:var(--text-faint);}
 
+  /* ---- Historical market chart ---- */
+  .chart-panel{margin:0 18px 34px; background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:hidden;}
+  .chart-head{padding:15px 16px 12px; border-bottom:1px solid var(--border);}
+  .chart-title-row{display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
+  .chart-title{font-size:14px; font-weight:700; letter-spacing:.02em;}
+  .chart-sub{font-size:10.5px; color:var(--text-faint); line-height:1.4; margin-top:4px; max-width:580px;}
+  .chart-status{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.04em; color:var(--text-dim); text-align:right; line-height:1.45;}
+  .chart-toolbar{display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:13px;}
+  .chart-control{border:1px solid var(--border); color:var(--text-dim); background:var(--surface-alt); font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.04em; text-transform:uppercase; border-radius:7px; padding:7px 8px; cursor:pointer;}
+  .chart-control.active{color:#041B22; background:var(--accent); border-color:var(--accent); font-weight:700;}
+  .chart-control.metric-price.active{background:var(--accent); border-color:var(--accent);}
+  .chart-control.metric-oi.active{background:#A78BFA; border-color:#A78BFA; color:#160D2B;}
+  .chart-control.metric-book.active{background:var(--rise); border-color:var(--rise); color:#062018;}
+  .chart-divider{width:1px; height:24px; background:var(--border); margin:0 1px;}
+  .chart-legend{display:flex; flex-wrap:wrap; gap:8px 12px; padding:11px 16px; background:rgba(23,28,38,.66); border-bottom:1px solid var(--border); font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--text-dim);}
+  .chart-legend span{display:flex; align-items:center; gap:5px;}
+  .legend-dot{width:7px; height:7px; border-radius:50%; display:inline-block;}
+  .chart-stage{height:560px; width:100%; position:relative; background:#0E131C;}
+  .chart-empty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:20px; text-align:center; color:var(--text-faint); font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.5; pointer-events:none;}
+  .chart-note{padding:10px 16px 12px; color:var(--text-faint); font-size:10.5px; line-height:1.45; border-top:1px solid var(--border);}
+  .chart-note a{color:var(--accent); text-decoration:none;}
+  @media (max-width:520px){.chart-status{text-align:left;}.chart-title-row{display:block;}.chart-status{margin-top:7px;}.chart-stage{height:500px;}.chart-divider{display:none;}.chart-control{padding:6px 7px;}}
+
   main{padding:14px 18px 32px; display:flex; flex-direction:column; gap:12px;}
   .card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px 16px 14px;}
   .card-top{display:flex; justify-content:space-between; align-items:flex-start;}
@@ -161,6 +184,29 @@
 
 <main id="cards"></main>
 
+<section class="chart-panel" aria-label="Historical market chart">
+  <div class="chart-head">
+    <div class="chart-title-row">
+      <div><div class="chart-title">Market history · Near-ATM order flow</div><div class="chart-sub">A multi-pane, independently scaled view of the current ATM ±3 strike band. Price, OI, and bid–ask quantities keep separate axes so unlike units are not visually equated.</div></div>
+      <div class="chart-status" id="chartStatus">Waiting for live history</div>
+    </div>
+    <div class="chart-toolbar" id="chartToolbar" aria-label="Chart controls">
+      <button class="chart-control chart-range" data-chart-range="1800000">30M</button>
+      <button class="chart-control chart-range active" data-chart-range="10800000">3H</button>
+      <button class="chart-control chart-range" data-chart-range="36000000">10H</button>
+      <span class="chart-divider"></span>
+      <button class="chart-control chart-metric metric-price active" data-chart-metric="price">Price + premiums</button>
+      <button class="chart-control chart-metric metric-oi active" data-chart-metric="oi">OI + change</button>
+      <button class="chart-control chart-metric metric-book active" data-chart-metric="book">Bid − ask</button>
+    </div>
+  </div>
+  <div class="chart-legend" aria-label="Chart series legend">
+    <span><i class="legend-dot" style="background:#4FD8E8"></i>Underlying price</span><span><i class="legend-dot" style="background:#F0B93D"></i>Call / Put premium</span><span><i class="legend-dot" style="background:#A78BFA"></i>Current Call / Put OI</span><span><i class="legend-dot" style="background:#34D399"></i>3-second OI change</span><span><i class="legend-dot" style="background:#FB6F6F"></i>Bid − ask quantity</span>
+  </div>
+  <div class="chart-stage" id="marketChart"><div class="chart-empty" id="chartEmpty">Connect to the live Dhan backend to load up to 10 hours of retained market history.</div></div>
+  <div class="chart-note">Each successful backend snapshot adds one point. The chart uses a three-second target cadence; actual timestamps are retained, and missing quote fields create gaps rather than invented values. OI change is calculated against the immediately preceding chart point in the current near-ATM band. <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a> · Copyright (c) 2025 TradingView, Inc.</div>
+</section>
+
 <div class="sheet-backdrop" id="sheetBackdrop">
   <div class="sheet">
     <h2>Settings</h2>
@@ -182,6 +228,7 @@
   </div>
 </div>
 
+<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 const WINDOWS = [
   { key:'m5',  label:'5 Min' },
@@ -198,6 +245,11 @@ let reconnectTimer = null;
 let reconnectAttempts = 0;
 let latestData = {};
 let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
+const chartState = {
+  chart:null, series:{}, points:[], symbol:null, loadToken:0,
+  rangeMs:3*60*60*1000, retentionMs:10*60*60*1000,
+  visible:{ price:true, oi:true, book:true }, loaded:false,
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -222,6 +274,150 @@ function fmtBps(n){ const v=finite(n); return v===null ? '—' : (v>0?'+':v<0?'�
 function fmtPct(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toFixed(digits) + '%'; }
 function fmtRatio(n){ const v=finite(n); return v===null ? '—' : v.toFixed(2) + '×'; }
 function fmtNum(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toLocaleString('en-IN', {maximumFractionDigits:digits, minimumFractionDigits:digits}); }
+
+function chartTime(point){ const t=finite(point?.t); return t===null ? null : Math.floor(t/1000); }
+function chartValue(point, key){ return finite(point?.[key]); }
+function chartData(points, key, kind='line', color=null){
+  return points.flatMap(point => {
+    const time = chartTime(point), value = chartValue(point, key);
+    if (time===null) return [];
+    if (value===null) return [{ time }];
+    if (kind==='hist') return [{ time, value, color: value>=0 ? color?.positive : color?.negative }];
+    return [{ time, value }];
+  });
+}
+
+function setChartStatus(text){ $('chartStatus').textContent=text; }
+function setChartEmpty(text, visible=true){ $('chartEmpty').textContent=text; $('chartEmpty').style.display=visible?'flex':'none'; }
+
+function createMarketChart(){
+  if (chartState.chart || !window.LightweightCharts) return chartState.chart;
+  const container = $('marketChart');
+  const L = window.LightweightCharts;
+  const chart = L.createChart(container, {
+    autoSize:true, height:560,
+    layout:{ background:{type:'solid',color:'#0E131C'}, textColor:'#8A94A6', fontFamily:"'IBM Plex Mono', ui-monospace, monospace", fontSize:10 },
+    grid:{ vertLines:{color:'rgba(35,42,56,.72)'}, horzLines:{color:'rgba(35,42,56,.72)'} },
+    rightPriceScale:{visible:true, borderColor:'#232A38'},
+    leftPriceScale:{visible:true, borderColor:'#232A38'},
+    timeScale:{borderColor:'#232A38', timeVisible:true, secondsVisible:true, rightOffset:4, barSpacing:5, minBarSpacing:.5},
+    crosshair:{mode:L.CrosshairMode.Normal, vertLine:{color:'rgba(79,216,232,.42)', labelBackgroundColor:'#1A2631'}, horzLine:{color:'rgba(79,216,232,.30)', labelBackgroundColor:'#1A2631'}},
+    handleScroll:{mouseWheel:true, pressedMouseMove:true, horzTouchDrag:true, vertTouchDrag:false},
+    handleScale:{axisPressedMouseMove:true, mouseWheel:true, pinch:true},
+  });
+  chart.addPane(); chart.addPane();
+  chartState.chart=chart;
+  const add=(key, definition, options, pane=0)=>chartState.series[key]=chart.addSeries(definition, options, pane);
+  add('underlyingPrice', L.AreaSeries, {lineColor:'#4FD8E8', topColor:'rgba(79,216,232,.20)', bottomColor:'rgba(79,216,232,0)', lineWidth:2, title:'Underlying', priceFormat:{type:'price',precision:2,minMove:.01}, priceScaleId:'right'}, 0);
+  add('callPrice', L.LineSeries, {color:'#F0B93D', lineWidth:1, title:'Call premium', priceFormat:{type:'price',precision:2,minMove:.01}, priceScaleId:'left'}, 0);
+  add('putPrice', L.LineSeries, {color:'#FB8A5F', lineWidth:1, title:'Put premium', priceFormat:{type:'price',precision:2,minMove:.01}, priceScaleId:'left'}, 0);
+  add('callOi', L.LineSeries, {color:'#A78BFA', lineWidth:2, title:'Call OI', priceScaleId:'right'}, 1);
+  add('putOi', L.LineSeries, {color:'#C4B5FD', lineWidth:1, lineStyle:L.LineStyle.Dashed, title:'Put OI', priceScaleId:'right'}, 1);
+  add('callOiChange', L.HistogramSeries, {title:'Call OI Δ', priceScaleId:'left', base:0}, 1);
+  add('putOiChange', L.HistogramSeries, {title:'Put OI Δ', priceScaleId:'left', base:0}, 1);
+  add('callBidAskDifference', L.HistogramSeries, {title:'Call bid−ask', priceScaleId:'right', base:0}, 2);
+  add('putBidAskDifference', L.HistogramSeries, {title:'Put bid−ask', priceScaleId:'right', base:0}, 2);
+  add('callBidAskImbalance', L.LineSeries, {color:'#34D399', lineWidth:1, title:'Call imbalance', priceScaleId:'left', priceFormat:{type:'percent',precision:1,minMove:.1}}, 2);
+  add('putBidAskImbalance', L.LineSeries, {color:'#F472B6', lineWidth:1, title:'Put imbalance', priceScaleId:'left', priceFormat:{type:'percent',precision:1,minMove:.1}}, 2);
+  chart.panes()[0]?.setHeight?.(210); chart.panes()[1]?.setHeight?.(175); chart.panes()[2]?.setHeight?.(150);
+  return chart;
+}
+
+const chartSeriesConfig = [
+  ['underlyingPrice','price','line'], ['callPrice','price','line'], ['putPrice','price','line'],
+  ['callOi','oi','line'], ['putOi','oi','line'],
+  ['callOiChange','oi','hist',{positive:'rgba(52,211,153,.72)',negative:'rgba(251,111,111,.72)'}],
+  ['putOiChange','oi','hist',{positive:'rgba(167,139,250,.72)',negative:'rgba(196,181,253,.35)'}],
+  ['callBidAskDifference','book','hist',{positive:'rgba(52,211,153,.72)',negative:'rgba(251,111,111,.72)'}],
+  ['putBidAskDifference','book','hist',{positive:'rgba(167,139,250,.72)',negative:'rgba(244,114,182,.66)'}],
+  ['callBidAskImbalance','book','line'], ['putBidAskImbalance','book','line'],
+];
+
+function applyChartVisibility(){
+  for (const [,group,,] of chartSeriesConfig){
+    for (const [key,ownGroup] of chartSeriesConfig){
+      if (ownGroup===group) chartState.series[key]?.applyOptions({visible:chartState.visible[group]});
+    }
+  }
+}
+
+function setChartData(points, symbolName, meta={}){
+  const chart = createMarketChart();
+  chartState.points = [...points].filter(point=>chartTime(point)!==null).sort((a,b)=>a.t-b.t);
+  chartState.symbol = symbolName;
+  chartState.retentionMs = Number(meta.retentionMs) || chartState.retentionMs;
+  chartState.loaded = true;
+  if (!chartState.points.length){ setChartEmpty('The backend is live, but historical chart points will appear after the first successful Dhan sample.'); setChartStatus('Awaiting first live sample'); return; }
+  for (const [key,,kind,color] of chartSeriesConfig) chartState.series[key].setData(chartData(chartState.points,key,kind,color));
+  applyChartVisibility();
+  setChartEmpty('',false);
+  setChartRange(chartState.rangeMs, true);
+  const span = chartState.points.length>1 ? chartState.points.at(-1).t-chartState.points[0].t : 0;
+  const cadence = Number(meta.sampleIntervalMs) || 3000;
+  setChartStatus(`${symbolName} · ${chartState.points.length.toLocaleString('en-IN')} samples · ${Math.round(cadence/1000)}s target · ${fmtAgo(span) || 'warming'}`);
+}
+
+function setChartRange(rangeMs, preserve=false){
+  chartState.rangeMs=Number(rangeMs);
+  document.querySelectorAll('.chart-range').forEach(btn=>btn.classList.toggle('active',Number(btn.dataset.chartRange)===chartState.rangeMs));
+  const points=chartState.points, chart=chartState.chart;
+  if (!chart || !points.length) return;
+  if (chartState.rangeMs>=chartState.retentionMs || points.length<2){ chart.timeScale().fitContent(); return; }
+  const last=points.at(-1).t, first=Math.max(points[0].t,last-chartState.rangeMs);
+  chart.timeScale().setVisibleRange({from:Math.floor(first/1000),to:Math.floor(last/1000)});
+  if (!preserve) chart.timeScale().scrollToRealTime();
+}
+
+function ingestChartPoint(point, symbolName, meta={}){
+  if (!point || symbolName!==symbol) return;
+  if (!chartState.loaded || chartState.symbol!==symbolName){ return; }
+  const time=chartTime(point), last=chartState.points.at(-1), lastTime=chartTime(last);
+  if (time===null || (lastTime!==null && time<lastTime)) return;
+  if (time===lastTime) chartState.points[chartState.points.length-1]=point;
+  else chartState.points.push(point);
+  const cutoff=point.t-(Number(meta.retentionMs)||chartState.retentionMs);
+  while(chartState.points.length && chartState.points[0].t<cutoff) chartState.points.shift();
+  for (const [key,,kind,color] of chartSeriesConfig){
+    const value=chartValue(point,key);
+    const item=value===null ? {time} : kind==='hist' ? {time,value,color:value>=0?color?.positive:color?.negative}:{time,value};
+    chartState.series[key]?.update(item);
+  }
+  const span=chartState.points.length>1 ? chartState.points.at(-1).t-chartState.points[0].t : 0;
+  setChartStatus(`${symbolName} · ${chartState.points.length.toLocaleString('en-IN')} samples · ${Math.round((Number(meta.sampleIntervalMs)||3000)/1000)}s target · ${fmtAgo(span) || 'warming'}`);
+}
+
+async function loadChartHistory(symbolName){
+  if (!backendUrl) return;
+  const token=++chartState.loadToken;
+  chartState.loaded=false; chartState.symbol=symbolName;
+  setChartEmpty('Loading retained Dhan chart history…'); setChartStatus(`${symbolName} · loading history`);
+  try{
+    const res=await fetch(backendUrl.replace(/\/$/,'') + '/api/chart/' + encodeURIComponent(symbolName));
+    if (!res.ok) throw new Error('history unavailable');
+    const payload=await res.json();
+    if (token!==chartState.loadToken || symbol!==symbolName) return;
+    const livePoint=latestData[symbolName]?.chart?.point;
+    const points=Array.isArray(payload.points)?payload.points:[];
+    if (livePoint && (!points.length || livePoint.t>points.at(-1).t)) points.push(livePoint);
+    setChartData(points,symbolName,payload);
+  }catch(_){
+    if (token!==chartState.loadToken || symbol!==symbolName) return;
+    chartState.loaded=false;
+    setChartEmpty('Historical chart unavailable until the live backend exposes retained chart history.');
+    setChartStatus(`${symbolName} · history unavailable`);
+  }
+}
+
+$('chartToolbar').addEventListener('click',(event)=>{
+  const range=event.target.closest('.chart-range');
+  if (range) return setChartRange(range.dataset.chartRange);
+  const metric=event.target.closest('.chart-metric');
+  if (!metric) return;
+  const key=metric.dataset.chartMetric;
+  chartState.visible[key]=!chartState.visible[key];
+  metric.classList.toggle('active',chartState.visible[key]);
+  applyChartVisibility();
+});
 
 function strengthPanel(windows){
   const preferred = WINDOWS.map(w => ({ key:w.key, label:w.label, win:windows?.[w.key] })).find(entry => entry.win?.marketStrength);
@@ -397,13 +593,16 @@ function update(data){
   renderOverview();
   const payload = data[symbol];
   renderCards(payload);
+  if (payload?.chart?.point) ingestChartPoint(payload.chart.point, symbol, payload.chart);
   if (payload?.status) setStatus(payload.status==='live' ? 'live' : payload.status==='stale' ? 'stale' : 'error');
 }
 
 function selectSymbol(sym){
+  if (symbol===sym) return;
   symbol = sym;
   renderOverview();
   renderCards(latestData[symbol]);
+  loadChartHistory(symbol);
 }
 
 // ---- Live connection (SSE) ----
@@ -423,6 +622,7 @@ async function connect(){
       symbol = symbolsList[0];
       latestData = {};
       renderOverview();
+      loadChartHistory(symbol);
     }
   } catch(_) { /* fall through — SSE will still try, overview just shows stale symbol list */ }
 
