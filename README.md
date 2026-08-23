@@ -27,6 +27,35 @@ Dhan's `previous_oi` field. The 5-minute card becomes available after at least
 3-hour card after at least 3 hours. This prevents a short warm-up interval
 from being mislabeled as a full time window.
 
+## Market strength panel
+
+Each available window now includes a **market-strength bar**. It is a compact
+summary of the data currently available across the same ATM ±3 strike band;
+it is not a signal to buy, sell, or hold. The panel always states the selected
+window and a data-confidence percentage so a 5-minute read is not confused
+with a 3-hour read.
+
+| Input | Calculation | How it is used |
+|---|---|---|
+| Underlying movement | Underlying `last_price` change from the beginning of the exact window, shown in basis points. | Directional component. |
+| Option premium movement | Volume-weighted CE `last_price` change versus volume-weighted PE `last_price` change. | Directional component. |
+| Best quote imbalance | Depth-weighted `(top_bid_quantity - top_ask_quantity) / (top_bid_quantity + top_ask_quantity)` for CE and PE. | Directional component when valid quotes are present. |
+| Window OI and session OI | Exact-window CE/PE OI changes from OI Pulse snapshots, plus Dhan's current-vs-previous-day OI change. | Activity context; not treated as direction by itself. |
+| Current OI PCR and volume PCR | Put totals divided by Call totals across the tracked band. | Positioning and participation context. |
+| Liquidity and IV | Best bid/ask spreads, quote coverage, and OI-weighted implied volatility. | Quality/context indicators. |
+
+The direction score is a confidence-weighted blend of underlying return (45%),
+relative Call-versus-Put premium movement (35%), and the difference between
+Call and Put best-quote imbalance (20%). If quote or premium fields are absent,
+the unavailable component is removed and the confidence score falls. A label
+such as **Strong upward pressure**, **Mild downward pressure**, or
+**Balanced / mixed** describes only the current inputs; it is not a prediction.
+
+> **Important:** OI cannot identify whether a position was opened long or
+> short without trade classification and order-flow context. A Call/Put OI
+> activity imbalance, PCR, premium move, or top-of-book imbalance can change
+> rapidly and should not be used alone to infer future market direction.
+
 The repository contains two synchronized static frontend copies:
 
 - `frontend/` is the source copy for Netlify, Vercel, or another static host.
@@ -51,8 +80,10 @@ has an active Data API subscription before deployment; Dhan documents this
 requirement in its [authentication guide](https://dhanhq.co/docs/v2/authentication/).
 The project uses Dhan's official `POST /v2/optionchain` and
 `POST /v2/optionchain/expirylist` endpoints, whose response includes
-strike-wise CE/PE `oi` values and the underlying `last_price`; see the
-[official Option Chain documentation](https://dhanhq.co/docs/v2/option-chain/).
+strike-wise CE/PE `oi` values and the underlying `last_price`. Dhan also
+documents CE/PE `last_price`, `volume`, `implied_volatility`, `previous_oi`,
+and top bid/ask prices and quantities, which power the market-strength
+aggregates; see the [official Option Chain documentation](https://dhanhq.co/docs/v2/option-chain/).
 
 1. Log into `web.dhan.co` → **My Profile → DhanHQ Trading APIs**.
 2. Copy your **Client ID**.
