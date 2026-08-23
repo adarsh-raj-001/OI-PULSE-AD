@@ -12,4 +12,8 @@
 - [x] Fix live backend connection resilience without embedding a deployment-specific keep-alive URL.
 - [x] Make Call/Put volume and bid-ask metrics visibly available in the market-strength dashboard.
 - [x] Validate the connection and aggregate display fixes before publication.
-- [ ] Publish the validated connection-resilience fix to main through a pull request.
+- [x] Publish the validated connection-resilience fix to main through a pull request.
+- [x] Add retained ten-hour market-history snapshots at a three-second cadence for charting.
+- [x] Add a dynamic TradingView-style price, OI, bid-ask, and Call/Put metric chart to the dashboard.
+- [x] Validate chart values, retention bounds, responsiveness, and frontend/docs synchronization.
+- [ ] Publish the reviewed historical-chart feature to main through a pull request.

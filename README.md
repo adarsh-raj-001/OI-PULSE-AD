@@ -62,6 +62,27 @@ and ask prices**, and the bid-ask spread. These values are summarized across
 the tracked ATM ±3 strike band and should be read with quote coverage and
 spread: a low-coverage or wide-spread book is less informative.
 
+## Ten-hour historical market chart
+
+The end of the dashboard contains an interactive **Market history** chart with
+30-minute, 3-hour, and 10-hour time-range controls. Each successful live Dhan
+snapshot adds one compact point to the chart. The target sample cadence is
+**three seconds**; the chart preserves actual timestamps, so a slow or failed
+source response is not silently represented as an on-time observation.
+
+| Chart pane | Retained measures | Interpretation boundary |
+|---|---|---|
+| Price and premiums | Underlying last price plus volume-weighted Call and Put premium across the current ATM ±3 band. | The underlying and option-premium axes are independent. A premium move is not a prediction of the underlying. |
+| OI and change | Current Call/Put OI plus the Call/Put OI change versus the immediately preceding chart point. | OI change is a short-interval measurement, not the existing 5-minute, 30-minute, or 3-hour window delta. |
+| Bid–ask depth | Call/Put top-book bid-minus-ask quantity and normalized bid–ask imbalance. | Values appear only where the source supplies valid top-of-book quantities. Missing fields create chart gaps rather than zeroes. |
+
+The backend retains these compact points for **10 hours** in memory and exposes
+them once through `GET /api/chart/:symbol`; the live SSE stream then sends only
+the latest point. This avoids repeatedly transferring the entire retained
+history. The chart uses [TradingView Lightweight Charts™](https://tradingview.github.io/lightweight-charts/docs/), which supports independent panes and client-side real-time series updates. The chart is a visual data summary, not a trading recommendation.
+
+> TradingView Lightweight Charts™ · Copyright (c) 2025 TradingView, Inc. · [tradingview.com](https://www.tradingview.com/)
+
 The repository contains two synchronized static frontend copies:
 
 - `frontend/` is the source copy for Netlify, Vercel, or another static host.
@@ -73,7 +94,7 @@ The repository contains two synchronized static frontend copies:
 | File | Contains |
 |---|---|
 | `backend/.env` | **Secrets**: Dhan client ID/token, VAPID push keys. Never commit this. |
-| `backend/config.json` | **Tunables**: symbols tracked, strikes-each-side, poll interval, notification thresholds, cooldown. Safe to commit. |
+| `backend/config.json` | **Tunables**: symbols tracked, strikes-each-side, poll interval, raw OI history, compact chart retention, notification thresholds, cooldown. Safe to commit. |
 | `backend/config.js` | Loads both of the above — nothing else in the app reads `.env` or `config.json` directly. |
 
 To change how sensitive the alerts are, or add/remove symbols, edit
@@ -116,10 +137,10 @@ npm start
 
 Starts on `http://localhost:8787`. Check `http://localhost:8787/api/health`.
 
-The backend polls each configured underlying every 4 seconds. Dhan documents a
-limit of one unique Option Chain request every 3 seconds, so the default
-interval leaves headroom while NIFTY and SENSEX remain separate underlying
-requests. The backend also prevents overlapping polls for the same symbol.
+The backend polls each configured underlying every 3 seconds, matching Dhan's
+documented limit of one unique Option Chain request every 3 seconds. NIFTY and
+SENSEX remain separate underlying requests, and the backend prevents
+overlapping polls for the same symbol if a response takes longer than expected.
 
 ### Keeping a Render service awake
 
