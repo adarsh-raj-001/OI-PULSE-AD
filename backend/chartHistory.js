@@ -1,0 +1,119 @@
+// Compact chart-series helpers. These points are retained separately from the
+// raw snapshots used for exact 5m/30m/3h OI windows so a 10-hour chart does
+// not require keeping full option-chain objects in memory.
+
+const finite = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+function sortedStrikes(strikes) {
+  return Object.keys(strikes || {})
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+}
+
+function nearestStrikeIndex(strikes, price) {
+  const numericPrice = finite(price);
+  if (numericPrice === null || !strikes.length) return null;
+  let bestIndex = 0;
+  let bestDifference = Math.abs(strikes[0] - numericPrice);
+  for (let index = 1; index < strikes.length; index += 1) {
+    const difference = Math.abs(strikes[index] - numericPrice);
+    if (difference < bestDifference) {
+      bestIndex = index;
+      bestDifference = difference;
+    }
+  }
+  return bestIndex;
+}
+
+function legValue(leg, key) {
+  if (key === 'oi' && (typeof leg === 'number' || typeof leg === 'string')) return finite(leg);
+  return finite(leg?.[key]);
+}
+
+function weightedOrSimpleAverage(entries) {
+  const values = entries.filter((entry) => finite(entry.value) !== null);
+  if (!values.length) return null;
+  const weighted = values.filter((entry) => finite(entry.weight) !== null && Number(entry.weight) > 0);
+  const totalWeight = weighted.reduce((total, entry) => total + Number(entry.weight), 0);
+  if (totalWeight) return weighted.reduce((total, entry) => total + Number(entry.value) * Number(entry.weight), 0) / totalWeight;
+  return values.reduce((total, entry) => total + Number(entry.value), 0) / values.length;
+}
+
+function emptySide() {
+  return { oi: 0, volume: 0, prices: [], bidQuantity: 0, askQuantity: 0, quoteLegs: 0 };
+}
+
+function addLeg(side, leg) {
+  if (!leg) return;
+  side.oi += legValue(leg, 'oi') ?? 0;
+  side.volume += legValue(leg, 'volume') ?? 0;
+  const lastPrice = legValue(leg, 'lastPrice');
+  if (lastPrice !== null) side.prices.push({ value: lastPrice, weight: legValue(leg, 'volume') });
+
+  const bidQuantity = legValue(leg, 'topBidQuantity');
+  const askQuantity = legValue(leg, 'topAskQuantity');
+  if (bidQuantity !== null && askQuantity !== null) {
+    side.bidQuantity += bidQuantity;
+    side.askQuantity += askQuantity;
+    side.quoteLegs += 1;
+  }
+}
+
+function sidePoint(side, previous, prefix) {
+  const bidAskDifference = side.quoteLegs ? side.bidQuantity - side.askQuantity : null;
+  const depth = side.quoteLegs ? side.bidQuantity + side.askQuantity : null;
+  return {
+    [`${prefix}Oi`]: side.oi,
+    [`${prefix}OiChange`]: previous && finite(previous[`${prefix}Oi`]) !== null ? side.oi - Number(previous[`${prefix}Oi`]) : null,
+    [`${prefix}Volume`]: side.volume,
+    [`${prefix}Price`]: weightedOrSimpleAverage(side.prices),
+    [`${prefix}BidAskDifference`]: bidAskDifference,
+    [`${prefix}BidAskImbalance`]: depth ? bidAskDifference / depth : null,
+  };
+}
+
+/**
+ * Builds one compact, ATM ±N chart point. OI change is the difference from the
+ * immediately preceding retained point, while OI and option price are current
+ * near-ATM band values. This keeps each series internally comparable over time
+ * without claiming that disparate units share the same price scale.
+ */
+export function buildChartPoint(snapshot, previousPoint, strikesEachSide) {
+  const strikes = sortedStrikes(snapshot?.strikes);
+  const atmIndex = nearestStrikeIndex(strikes, snapshot?.underlyingPrice);
+  const timestamp = finite(snapshot?.t);
+  const underlyingPrice = finite(snapshot?.underlyingPrice);
+  if (timestamp === null || underlyingPrice === null || atmIndex === null) return null;
+
+  const call = emptySide();
+  const put = emptySide();
+  for (let offset = -strikesEachSide; offset <= strikesEachSide; offset += 1) {
+    const strike = strikes[atmIndex + offset];
+    if (!Number.isFinite(strike)) continue;
+    const legs = snapshot.strikes[strike];
+    addLeg(call, legs?.ce);
+    addLeg(put, legs?.pe);
+  }
+
+  return {
+    t: timestamp,
+    underlyingPrice,
+    underlyingPriceChange: previousPoint && finite(previousPoint.underlyingPrice) !== null
+      ? underlyingPrice - Number(previousPoint.underlyingPrice)
+      : null,
+    atmStrike: strikes[atmIndex],
+    ...sidePoint(call, previousPoint, 'call'),
+    ...sidePoint(put, previousPoint, 'put'),
+  };
+}
+
+export function appendChartPoint(points, point, cutoffMs) {
+  if (!point) return points;
+  points.push(point);
+  while (points.length && points[0].t < cutoffMs) points.shift();
+  return points;
+}

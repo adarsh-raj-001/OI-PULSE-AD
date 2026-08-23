@@ -18,10 +18,12 @@
   "_strikesEachSide_comment": "How many strikes above/below the at-the-money strike to track. 3 = ATM + 3 up + 3 down = 7 strikes total.",
   "strikesEachSide": 3,
 
-  "_pollIntervalMs_comment": "dhan's documented rate limit is 1 request per 3 seconds per instrument+expiry, spaced here at 4s for extra headroom after hitting a rate limit once.",
-  "pollIntervalMs": 4000,
+  "_pollIntervalMs_comment": "Dhan documents one unique Option Chain request every 3 seconds per instrument+expiry. This is the live chart sample interval; pollSymbol prevents overlapping requests if a response is slow.",
+  "pollIntervalMs": 3000,
   "ssePushIntervalMs": 1500,
   "historyMaxMs": 12960000,
+  "_chartHistoryMaxMs_comment": "Compact near-ATM chart points retained independently from raw OI snapshots: 10 hours at the three-second live sample cadence.",
+  "chartHistoryMaxMs": 36000000,
 
   "_thresholds_comment": "Notification fires when the combined OI change across the tracked 7-strike band (ATM +/-3) crosses this many contracts, for that window. Set per window since 5m moves are naturally smaller than 3h moves.",
   "thresholds": {

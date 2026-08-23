@@ -62,6 +62,7 @@ export const config = {
   pollIntervalMs: tunables.pollIntervalMs,
   ssePushIntervalMs: tunables.ssePushIntervalMs,
   historyMaxMs: tunables.historyMaxMs,
+  chartHistoryMaxMs: tunables.chartHistoryMaxMs,
   thresholds: tunables.thresholds,
   notifyCooldownMs: tunables.notifyCooldownMs,
 };

@@ -12,11 +12,16 @@ import { addSubscription, removeSubscription, checkThresholds } from './notifica
 import * as dhanSource from './dataSources/dhan.js';
 import * as nseFreeSource from './dataSources/nseFree.js';
 import { buildMarketStrength } from './marketStrength.js';
+import { appendChartPoint, buildChartPoint } from './chartHistory.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
 // symbol -> array of { t, underlyingPrice, strikes: { [strike]: {ce, pe} } }
 const history = Object.fromEntries(config.symbols.map((s) => [s.name, []]));
+
+// symbol -> compact 10-hour near-ATM chart points. These are separate from
+// raw OI snapshots so history delivery stays fast and bounded.
+const chartHistory = Object.fromEntries(config.symbols.map((s) => [s.name, []]));
 
 // symbol -> latest computed payload sent to clients
 const latest = Object.fromEntries(config.symbols.map((s) => [s.name, null]));
@@ -127,6 +132,14 @@ function computePayload(name) {
   };
 }
 
+function chartMeta(name, point) {
+  return {
+    sampleIntervalMs: config.pollIntervalMs,
+    retentionMs: config.chartHistoryMaxMs,
+    point: point || chartHistory[name][chartHistory[name].length - 1] || null,
+  };
+}
+
 const pollInFlight = new Set();
 
 async function pollSymbol(sym) {
@@ -140,8 +153,13 @@ async function pollSymbol(sym) {
     const cutoff = t - config.historyMaxMs;
     while (hist.length && hist[0].t < cutoff) hist.shift();
 
+    const points = chartHistory[sym.name];
+    const chartPoint = buildChartPoint({ t, ...summary }, points[points.length - 1], config.strikesEachSide);
+    appendChartPoint(points, chartPoint, t - config.chartHistoryMaxMs);
+
     const payload = computePayload(sym.name);
     payload.status = 'live';
+    payload.chart = chartMeta(sym.name, chartPoint);
     latest[sym.name] = payload;
 
     checkThresholds(sym.name, payload.windows);
@@ -177,6 +195,7 @@ app.get('/api/config', (_req, res) => {
     dataSourceLabel: source.label,
     symbols: config.symbols.map((s) => s.name),
     strikesEachSide: config.strikesEachSide,
+    chart: { sampleIntervalMs: config.pollIntervalMs, retentionMs: config.chartHistoryMaxMs },
     thresholds: config.thresholds,
     notificationsEnabled,
   });
@@ -186,6 +205,24 @@ app.get('/api/oi/:symbol', (req, res) => {
   const name = req.params.symbol.toUpperCase();
   if (!latest[name]) return res.status(404).json({ error: 'unknown symbol' });
   res.json(latest[name]);
+});
+
+// Full retained history is requested once after connection or a symbol change.
+// SSE subsequently sends only the latest compact point rather than re-sending
+// up to ten hours of chart data every push interval.
+app.get('/api/chart/:symbol', (req, res) => {
+  const name = req.params.symbol.toUpperCase();
+  if (!chartHistory[name]) return res.status(404).json({ error: 'unknown symbol' });
+  const requestedFrom = Number(req.query.from);
+  const points = Number.isFinite(requestedFrom)
+    ? chartHistory[name].filter((point) => point.t >= requestedFrom)
+    : chartHistory[name];
+  res.json({
+    symbol: name,
+    sampleIntervalMs: config.pollIntervalMs,
+    retentionMs: config.chartHistoryMaxMs,
+    points,
+  });
 });
 
 app.get('/api/vapid-public-key', (_req, res) => {
