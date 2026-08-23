@@ -24,7 +24,14 @@
 - [x] Change chart storage and rendering from fixed three-second samples to event-driven live-feed timestamps.
 - [x] Add stream freshness, reconnect, fallback, and contract-test coverage.
 - [x] Validate the Dhan streaming feature before publication.
-- [ ] Publish the reviewed Dhan streaming feature to main through a pull request.
+- [x] Publish the reviewed Dhan streaming feature to main through a pull request.
+- [x] Audit the Option Chain REST polling cadence and prove it remains at or above three seconds per symbol.
+- [x] Diagnose live/stale status flapping across the backend stream state and browser display.
+- [x] Correct any request-limit or status-stability defect and validate REST fallback behavior.
+- [ ] Publish the reviewed request-limit and status-stability correction to main through a pull request.
+- [x] Serialize Dhan Option Chain calls globally at no more than one request every three seconds, based on observed 429 responses.
+- [x] Keep a healthy Dhan live WebSocket state distinct from REST reconciliation failures in dashboard status.
+- [x] Add 429 backoff and serialized-polling tests before publishing the correction.
 - [x] Remove redundant on-chart series labels while retaining the colour legend.
 - [x] Improve mobile touch panning and vertical price-scale controls for the chart.
 - [x] Remove the permanent blue loading indicator and excess chart header divider.
