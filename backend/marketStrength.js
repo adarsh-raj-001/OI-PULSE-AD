@@ -41,7 +41,7 @@ function quoteStats(leg) {
   const imbalance = depth ? (bidQuantity - askQuantity) / depth : null;
   const mid = bidPrice !== null && askPrice !== null ? (bidPrice + askPrice) / 2 : null;
   const spreadBps = mid && askPrice >= bidPrice ? ((askPrice - bidPrice) / mid) * 10_000 : null;
-  return { depth, imbalance, spreadBps };
+  return { bidPrice, askPrice, bidQuantity, askQuantity, depth, imbalance, spreadBps };
 }
 
 function direction(score, confidence) {
@@ -56,8 +56,8 @@ function direction(score, confidence) {
 }
 
 export function buildMarketStrength({ cur, ref, band, actualSpanMs }) {
-  const call = { oi: 0, sessionOiChange: 0, volume: 0, premiumChanges: [], book: [], spreads: [], iv: [], validQuotes: 0, legs: 0 };
-  const put = { oi: 0, sessionOiChange: 0, volume: 0, premiumChanges: [], book: [], spreads: [], iv: [], validQuotes: 0, legs: 0 };
+  const call = { oi: 0, sessionOiChange: 0, volume: 0, bidQuantity: 0, askQuantity: 0, premiumChanges: [], book: [], spreads: [], bidPrices: [], askPrices: [], iv: [], validQuotes: 0, legs: 0 };
+  const put = { oi: 0, sessionOiChange: 0, volume: 0, bidQuantity: 0, askQuantity: 0, premiumChanges: [], book: [], spreads: [], bidPrices: [], askPrices: [], iv: [], validQuotes: 0, legs: 0 };
 
   for (const row of band) {
     const now = cur.strikes[row.strike];
@@ -80,7 +80,11 @@ export function buildMarketStrength({ cur, ref, band, actualSpanMs }) {
         field.book.push({ value: quote.imbalance, weight: quote.depth });
         field.validQuotes += 1;
       }
+      if (quote.bidQuantity !== null) field.bidQuantity += quote.bidQuantity;
+      if (quote.askQuantity !== null) field.askQuantity += quote.askQuantity;
       if (quote.depth !== null && quote.spreadBps !== null) field.spreads.push({ value: quote.spreadBps, weight: quote.depth });
+      if (quote.bidPrice !== null && quote.bidQuantity !== null) field.bidPrices.push({ value: quote.bidPrice, weight: Math.max(quote.bidQuantity, 1) });
+      if (quote.askPrice !== null && quote.askQuantity !== null) field.askPrices.push({ value: quote.askPrice, weight: Math.max(quote.askQuantity, 1) });
       const iv = finite(currentLeg.impliedVolatility);
       if (iv !== null) field.iv.push({ value: iv, weight: Math.max(currentOi ?? 1, 1) });
       // Keep this reference explicit: selected-window OI change comes from the
@@ -96,6 +100,10 @@ export function buildMarketStrength({ cur, ref, band, actualSpanMs }) {
   const putBookImbalance = weightedAverage(put.book);
   const callSpreadBps = weightedAverage(call.spreads);
   const putSpreadBps = weightedAverage(put.spreads);
+  const callBidPrice = weightedAverage(call.bidPrices);
+  const callAskPrice = weightedAverage(call.askPrices);
+  const putBidPrice = weightedAverage(put.bidPrices);
+  const putAskPrice = weightedAverage(put.askPrices);
   const callIV = weightedAverage(call.iv);
   const putIV = weightedAverage(put.iv);
 
@@ -141,6 +149,16 @@ export function buildMarketStrength({ cur, ref, band, actualSpanMs }) {
       callVolume: call.volume,
       putVolume: put.volume,
       putCallVolumeRatio: ratio(put.volume, call.volume),
+      callBidQuantity: call.bidQuantity,
+      callAskQuantity: call.askQuantity,
+      callBidAskQuantityDifference: call.bidQuantity - call.askQuantity,
+      putBidQuantity: put.bidQuantity,
+      putAskQuantity: put.askQuantity,
+      putBidAskQuantityDifference: put.bidQuantity - put.askQuantity,
+      callWeightedBidPrice: callBidPrice,
+      callWeightedAskPrice: callAskPrice,
+      putWeightedBidPrice: putBidPrice,
+      putWeightedAskPrice: putAskPrice,
       callSideStrength,
       putSideStrength,
       strongerSide,

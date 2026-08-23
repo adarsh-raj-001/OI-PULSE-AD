@@ -56,6 +56,12 @@ such as **Strong upward pressure**, **Mild downward pressure**, or
 > activity imbalance, PCR, premium move, or top-of-book imbalance can change
 > rapidly and should not be used alone to infer future market direction.
 
+The expanded aggregate panel includes direct **Call/Put volume**, **top bid and
+ask quantities**, **bid-minus-ask quantity difference**, **depth-weighted bid
+and ask prices**, and the bid-ask spread. These values are summarized across
+the tracked ATM ±3 strike band and should be read with quote coverage and
+spread: a low-coverage or wide-spread book is less informative.
+
 The repository contains two synchronized static frontend copies:
 
 - `frontend/` is the source copy for Netlify, Vercel, or another static host.
@@ -114,6 +120,16 @@ The backend polls each configured underlying every 4 seconds. Dhan documents a
 limit of one unique Option Chain request every 3 seconds, so the default
 interval leaves headroom while NIFTY and SENSEX remain separate underlying
 requests. The backend also prevents overlapping polls for the same symbol.
+
+### Keeping a Render service awake
+
+On Render, the backend requests its own `/api/health` endpoint once a minute
+using the built-in `RENDER_EXTERNAL_URL`. This avoids a hardcoded deployment
+URL. If another host does not provide that variable, set `SELF_PING_URL` to
+the public backend URL. The browser now preserves the last live state and
+retries an interrupted SSE connection with capped exponential backoff instead
+of falling back to simulated data after four seconds. A service that is already
+asleep still needs an external uptime monitor or a non-sleeping hosting plan.
 
 **To use from your iPhone**, deploy it somewhere reachable over the
 internet — localhost won't reach your phone:

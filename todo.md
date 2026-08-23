@@ -7,4 +7,9 @@
 - [x] Add frontend strength bar, directional intensity, aggregate driver cards, and unavailable-data messaging.
 - [x] Validate calculations with deterministic Dhan-shaped fixtures and document the indicator limitations.
 - [x] Commit reviewed changes to the working branch and report the implementation.
-- [ ] Publish the reviewed market-strength commit to main through a pull request.
+- [x] Publish the reviewed market-strength commit to main through a pull request.
+- [x] Verify the backend self-ping configuration and identify why the frontend falls back to demo mode.
+- [x] Fix live backend connection resilience without embedding a deployment-specific keep-alive URL.
+- [x] Make Call/Put volume and bid-ask metrics visibly available in the market-strength dashboard.
+- [x] Validate the connection and aggregate display fixes before publication.
+- [ ] Publish the validated connection-resilience fix to main through a pull request.

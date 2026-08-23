@@ -228,14 +228,17 @@ setInterval(broadcast, config.ssePushIntervalMs);
 // pair it with an external uptime pinger (UptimeRobot, cron-job.org, a
 // scheduled GitHub Action) for that, or move to a paid Render plan, which
 // disables spin-down entirely.
-const selfUrl = process.env.RENDER_EXTERNAL_URL || null;
-if (selfUrl) {
+const selfUrl = process.env.SELF_PING_URL || process.env.RENDER_EXTERNAL_URL || null;
+const selfPingDisabled = process.env.DISABLE_SELF_PING === 'true';
+if (selfUrl && !selfPingDisabled) {
   const KEEPALIVE_MS = 60 * 1000; // comfortably under the 15 min idle timeout
-  setInterval(() => {
+  const selfPing = () => {
     fetch(`${selfUrl.replace(/\/$/, '')}/api/health`).catch((err) => {
       console.error('[keepalive] self-ping failed:', err.message);
     });
-  }, KEEPALIVE_MS);
+  };
+  selfPing();
+  setInterval(selfPing, KEEPALIVE_MS);
 }
 
 app.listen(config.port, () => {
@@ -243,6 +246,6 @@ app.listen(config.port, () => {
   console.log(`Data source: ${source.label}`);
   console.log(`Symbols: ${config.symbols.map((s) => s.name).join(', ')}`);
   console.log(`Push notifications: ${notificationsEnabled ? 'enabled' : 'disabled (set VAPID keys in .env)'}`);
-  console.log(`Self-ping keepalive: ${selfUrl ? `enabled (${selfUrl})` : 'disabled (not running on Render)'}`);
+  console.log(`Self-ping keepalive: ${selfUrl && !selfPingDisabled ? `enabled (${selfUrl})` : 'disabled (set SELF_PING_URL or use Render)'}`);
   pollLoop();
 });
