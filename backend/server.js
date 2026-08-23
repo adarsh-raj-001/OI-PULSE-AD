@@ -14,6 +14,8 @@ import * as nseFreeSource from './dataSources/nseFree.js';
 import { buildMarketStrength } from './marketStrength.js';
 import { appendChartPoint, buildChartPoint } from './chartHistory.js';
 import { DhanLiveFeed } from './dhanLiveFeed.js';
+import { SerializedPollScheduler } from './pollScheduler.js';
+import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
@@ -31,6 +33,7 @@ const latest = Object.fromEntries(config.symbols.map((s) => [s.name, null]));
 // a mutable copy of that chain whose active ATM band is updated by Dhan's Full
 // Packet stream between REST calls.
 const liveState = Object.fromEntries(config.symbols.map((s) => [s.name, null]));
+const restState = Object.fromEntries(config.symbols.map((s) => [s.name, 'starting']));
 const liveInstrumentRefs = new Map();
 let liveFeedStatus = { state: config.liveFeedEnabled ? 'waiting' : 'disabled', lastEventAt: null };
 let liveFeed = null;
@@ -155,17 +158,24 @@ function cloneSummary(summary) {
   return structuredClone(summary);
 }
 
-function updatePayload(name, point, status = 'live') {
+function updatePayload(name, point, nextRestState = null) {
+  if (nextRestState) restState[name] = nextRestState;
   const payload = computePayload(name);
   if (!payload) return;
-  payload.status = status;
+  const dataStatus = resolveDashboardStatus({
+    restState: restState[name],
+    liveFeedStatus,
+    freshnessMs: config.liveFeedFreshnessMs,
+  });
+  payload.status = dataStatus.status;
+  payload.dataStatus = dataStatus;
   payload.chart = chartMeta(name, point);
   payload.liveFeed = { ...liveFeedStatus };
   latest[name] = payload;
   checkThresholds(name, payload.windows);
 }
 
-function recordSnapshot(name, summary, t, { eventDriven = false, status = 'live' } = {}) {
+function recordSnapshot(name, summary, t, { eventDriven = false, restState: nextRestState = null } = {}) {
   const hist = history[name];
   const previous = hist[hist.length - 1] || null;
   const shouldReplace = eventDriven && previous && t - previous.t < config.liveFeedEventBucketMs;
@@ -181,7 +191,7 @@ function recordSnapshot(name, summary, t, { eventDriven = false, status = 'live'
   const previousChartPoint = replacingChartBucket ? points[points.length - 2] || null : points[points.length - 1] || null;
   const chartPoint = buildChartPoint(snapshot, previousChartPoint, config.strikesEachSide);
   appendChartPoint(points, chartPoint, t - config.chartHistoryMaxMs, eventDriven ? config.liveFeedEventBucketMs : 0);
-  updatePayload(name, chartPoint, status);
+  updatePayload(name, chartPoint, nextRestState);
 }
 
 function activeBandSubscriptions(sym, summary) {
@@ -246,14 +256,19 @@ function applyLivePacket(packet) {
       leg.topAskQuantity = top.askQuantity;
     }
   }
-  recordSnapshot(ref.symbol, summary, packet.receivedAt, { eventDriven: true, status: 'live' });
+  recordSnapshot(ref.symbol, summary, packet.receivedAt, { eventDriven: true });
 }
 
 if (config.liveFeedEnabled) {
   liveFeed = new DhanLiveFeed({
     getCredentials: dhanSource.getLiveFeedCredentials,
     onPacket: applyLivePacket,
-    onStatus: (status) => { liveFeedStatus = status; },
+    onStatus: (status) => {
+      liveFeedStatus = status;
+      for (const name of Object.keys(latest)) {
+        if (latest[name]) updatePayload(name, chartHistory[name][chartHistory[name].length - 1]);
+      }
+    },
   });
 }
 
@@ -268,7 +283,9 @@ async function pollSymbol(sym) {
     const hasRetainedHistory = history[sym.name].length > 0;
     liveState[sym.name] = cloneSummary(summary);
     refreshLiveSubscriptions();
-    const streamOwnsHistory = config.liveFeedEnabled && liveFeedStatus.state === 'connected' && hasRetainedHistory;
+    const streamOwnsHistory = config.liveFeedEnabled
+      && isLiveFeedFresh(liveFeedStatus, Date.now(), config.liveFeedFreshnessMs)
+      && hasRetainedHistory;
     if (streamOwnsHistory) {
       // The chain call refreshes expiry, full-chain context, IV, and the active
       // security-ID universe. Do not manufacture a graph point on its timer
@@ -277,27 +294,30 @@ async function pollSymbol(sym) {
     } else {
       // First snapshot and every degraded/live-feed-reconnect period retain the
       // existing REST fallback rather than leaving the dashboard empty.
-      recordSnapshot(sym.name, liveState[sym.name], t, { status: 'live' });
+      recordSnapshot(sym.name, liveState[sym.name], t, { restState: 'live' });
     }
+    return { retryAfterMs: 0 };
   } catch (err) {
     console.error(`[poll:${sym.name}]`, err.message);
-    if (latest[sym.name]) latest[sym.name].status = 'stale';
-    else latest[sym.name] = { symbol: sym.name, status: 'error', error: err.message };
+    const nextRestState = err.status === 429 ? 'rate-limited' : 'error';
+    if (latest[sym.name]) updatePayload(sym.name, chartHistory[sym.name][chartHistory[sym.name].length - 1], nextRestState);
+    else latest[sym.name] = { symbol: sym.name, status: 'error', error: err.message, dataStatus: { status: 'error', source: 'rest-error', restState: nextRestState } };
+    return { retryAfterMs: Number(err.retryAfterMs) || 0 };
   } finally {
     pollInFlight.delete(sym.name);
   }
 }
 
 function pollLoop() {
-  // Dhan: each underlying is its own rate-limit bucket (1 req/3s per
-  // instrument+expiry), safe to poll in parallel. NSE free source: polled
-  // less aggressively (see config.json) to avoid tripping its informal
-  // rate limiting, also fine in parallel since it's two separate requests.
-  const pollAll = () => {
-    for (const sym of config.symbols) pollSymbol(sym);
-  };
-  pollAll();
-  setInterval(pollAll, config.pollIntervalMs);
+  // Production logs showed simultaneous NIFTY/SENSEX Option Chain calls
+  // receiving 429 responses. Treat the Dhan limit as global for this account:
+  // one entire snapshot request starts at least every 3.1s, never in parallel.
+  const scheduler = new SerializedPollScheduler({
+    symbols: config.symbols,
+    minimumIntervalMs: config.pollIntervalMs,
+    run: pollSymbol,
+  });
+  scheduler.start();
 }
 
 // ---- HTTP layer ----
