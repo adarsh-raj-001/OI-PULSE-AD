@@ -34,5 +34,6 @@ assert.match(html, /horzTouchDrag:true, vertTouchDrag:true/);
 assert.match(html, /touch-action:none/);
 assert.doesNotMatch(html, /class="heartbeat"/);
 assert.doesNotMatch(html, /3-second OI change/);
+assert.match(html, /payload\.status==='connecting'\s*\?\s*'connecting'/);
 
 console.log('frontend connection, aggregate, and chart contracts passed');

@@ -595,7 +595,7 @@ function update(data){
   const payload = data[symbol];
   renderCards(payload);
   if (payload?.chart?.point) ingestChartPoint(payload.chart.point, symbol, payload.chart);
-  if (payload?.status) setStatus(payload.status==='live' ? 'live' : payload.status==='stale' ? 'stale' : 'error');
+  if (payload?.status) setStatus(payload.status==='live' ? 'live' : payload.status==='stale' ? 'stale' : payload.status==='connecting' ? 'connecting' : 'error');
 }
 
 function selectSymbol(sym){

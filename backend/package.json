@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test-market-strength.js && node test-chart-history.js && node test-dhan-live-feed.js && node test-frontend-contract.js"
+    "test": "node test-market-strength.js && node test-chart-history.js && node test-dhan-live-feed.js && node test-poll-scheduler.js && node test-live-status.js && node test-frontend-contract.js"
   },
   "engines": {
     "node": ">=18"

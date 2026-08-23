@@ -139,10 +139,14 @@ npm start
 
 Starts on `http://localhost:8787`. Check `http://localhost:8787/api/health`.
 
-The backend polls each configured underlying every 3 seconds, matching Dhan's
-documented limit of one unique Option Chain request every 3 seconds. NIFTY and
-SENSEX remain separate underlying requests, and the backend prevents
-overlapping polls for the same symbol if a response takes longer than expected.
+The backend treats the Dhan Option Chain endpoint conservatively as **one
+global request every 3.1 seconds**. Although Dhan's documentation describes
+unique underlying/expiry requests, this deployed account returned simultaneous
+HTTP 429 responses when NIFTY and SENSEX were polled in parallel. OI Pulse
+therefore serializes every Option Chain request across all symbols with a small
+safety buffer, and pauses the whole REST queue after a 429 rather than retrying
+immediately. This makes the complete-chain refresh slower across two symbols,
+but avoids rate-limit blocks.
 
 ### Dhan Live Market Feed
 
@@ -160,6 +164,11 @@ reconnects and re-subscribes after a close, reuses the backend's TOTP token
 refresh path, and falls back to the three-second Option Chain snapshots while
 the stream is reconnecting. Set `DISABLE_DHAN_LIVE_FEED=true` only to force the
 REST-only fallback during diagnostics.
+
+A recent Full Packet event keeps the dashboard status **LIVE** even if a
+background Option Chain reconciliation is temporarily rate-limited. If the
+WebSocket has also gone silent, the dashboard truthfully reports **STALE** and
+continues the serialized REST recovery path.
 
 Dhan describes WebSocket delivery as event-based market-data snapshots. OI
 Pulse therefore labels the history as **event-driven live data** rather than

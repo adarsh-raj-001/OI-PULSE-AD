@@ -60,6 +60,8 @@ export const config = {
   symbols: tunables.symbolsBySource[dataSource],
   strikesEachSide: tunables.strikesEachSide,
   pollIntervalMs: tunables.pollIntervalMs,
+  optionChainRateLimitBackoffMs: Number(tunables.optionChainRateLimitBackoffMs) || 15_000,
+  liveFeedFreshnessMs: Number(tunables.liveFeedFreshnessMs) || 15_000,
   ssePushIntervalMs: tunables.ssePushIntervalMs,
   historyMaxMs: tunables.historyMaxMs,
   chartHistoryMaxMs: tunables.chartHistoryMaxMs,

@@ -4,7 +4,7 @@
 // Symbol config shape: { name, dhan: { securityId, segment } }
 
 import { authenticator } from 'otplib';
-import { secrets } from '../config.js';
+import { config, secrets } from '../config.js';
 
 const DHAN_BASE = 'https://api.dhan.co/v2';
 const AUTH_URL = 'https://auth.dhan.co/app/generateAccessToken';
@@ -17,6 +17,13 @@ let tokenExpiresAt = 0; // epoch ms; 0 means "unknown / refresh on first use"
 let lastRefreshAttemptAt = 0;
 const MIN_REFRESH_INTERVAL_MS = 90 * 1000; // Dhan allows a new token once per ~2 min; stay safely under that
 const REQUEST_TIMEOUT_MS = 15_000;
+
+function dhanError(message, response) {
+  const error = new Error(message);
+  error.status = response?.status;
+  if (response?.status === 429) error.retryAfterMs = config.optionChainRateLimitBackoffMs;
+  return error;
+}
 
 function numericOrNull(value) {
   const number = Number(value);
@@ -99,7 +106,7 @@ async function fetchExpiry(sym, token) {
     headers: authHeaders(token),
     body: JSON.stringify({ UnderlyingScrip: sym.dhan.securityId, UnderlyingSeg: sym.dhan.segment }),
   });
-  if (!res.ok) throw new Error(`expirylist ${sym.name}: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw dhanError(`expirylist ${sym.name}: ${res.status} ${await res.text()}`, res);
   const data = await res.json();
   const dates = data?.data || [];
   if (!dates.length) throw new Error(`no expiries returned for ${sym.name}`);
@@ -130,16 +137,17 @@ export async function fetchSnapshot(sym) {
   let token = await getAccessToken();
   let res = await fetchOptionChainOnce(sym, token);
 
-  // If the token was rejected and we're in TOTP mode, force a fresh one and retry once.
+  // On a 401, refresh the token for the next serialized poll. Do not issue an
+  // immediate second Option Chain request that could violate Dhan's cadence.
   if (res.status === 401 && usingTotp) {
-    token = await getAccessToken(true);
-    expiryCache[sym.name] = null; // expiry lookup should also be retried under the new token
-    res = await fetchOptionChainOnce(sym, token);
+    await getAccessToken(true);
+    expiryCache[sym.name] = null;
+    throw dhanError(`optionchain ${sym.name}: 401 token refreshed; retrying on the next scheduled poll`, res);
   }
 
   if (!res.ok) {
     if (res.status === 400 || res.status === 404) expiryCache[sym.name] = null; // expiry may have rolled
-    throw new Error(`optionchain ${sym.name}: ${res.status} ${await res.text()}`);
+    throw dhanError(`optionchain ${sym.name}: ${res.status} ${await res.text()}`, res);
   }
   const raw = await res.json();
 
