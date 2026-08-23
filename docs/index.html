@@ -194,6 +194,8 @@ let symbolsList = ['NIFTY','SENSEX']; // overwritten once we know the backend's 
 let backendUrl = localStorage.getItem('oiPulseBackendUrl') || 'https://oi-pulse-backend-60u1.onrender.com';
 let es = null;
 let demoTimer = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
 let latestData = {};
 let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
 
@@ -219,6 +221,7 @@ function finite(n){ const v=Number(n); return Number.isFinite(v) ? v : null; }
 function fmtBps(n){ const v=finite(n); return v===null ? '—' : (v>0?'+':v<0?'−':'') + Math.abs(v).toFixed(0) + ' bp'; }
 function fmtPct(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toFixed(digits) + '%'; }
 function fmtRatio(n){ const v=finite(n); return v===null ? '—' : v.toFixed(2) + '×'; }
+function fmtNum(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toLocaleString('en-IN', {maximumFractionDigits:digits, minimumFractionDigits:digits}); }
 
 function strengthPanel(windows){
   const preferred = WINDOWS.map(w => ({ key:w.key, label:w.label, win:windows?.[w.key] })).find(entry => entry.win?.marketStrength);
@@ -257,6 +260,12 @@ function strengthPanel(windows){
           <div class="aggregate"><div class="k">Volume PCR</div><div class="v">${fmtRatio(a.putCallVolumeRatio)}</div></div>
           <div class="aggregate"><div class="k">Session OI C / P</div><div class="v">${fmtSigned(a.callSessionOiChange)} / ${fmtSigned(a.putSessionOiChange)}</div></div>
           <div class="aggregate"><div class="k">Volume C / P</div><div class="v">${fmtInt(a.callVolume)} / ${fmtInt(a.putVolume)}</div></div>
+          <div class="aggregate"><div class="k">Bid / ask qty · Call</div><div class="v">${fmtInt(a.callBidQuantity)} / ${fmtInt(a.callAskQuantity)}</div></div>
+          <div class="aggregate"><div class="k">Bid − ask qty · Call</div><div class="v ${trendClass(a.callBidAskQuantityDifference)}">${fmtSigned(a.callBidAskQuantityDifference)}</div></div>
+          <div class="aggregate"><div class="k">Bid / ask qty · Put</div><div class="v">${fmtInt(a.putBidQuantity)} / ${fmtInt(a.putAskQuantity)}</div></div>
+          <div class="aggregate"><div class="k">Bid − ask qty · Put</div><div class="v ${trendClass(a.putBidAskQuantityDifference)}">${fmtSigned(a.putBidAskQuantityDifference)}</div></div>
+          <div class="aggregate"><div class="k">Weighted bid / ask · C</div><div class="v">${fmtNum(a.callWeightedBidPrice, 2)} / ${fmtNum(a.callWeightedAskPrice, 2)}</div></div>
+          <div class="aggregate"><div class="k">Weighted bid / ask · P</div><div class="v">${fmtNum(a.putWeightedBidPrice, 2)} / ${fmtNum(a.putWeightedAskPrice, 2)}</div></div>
           <div class="aggregate"><div class="k">Spread C / P</div><div class="v">${fmtBps(a.callSpreadBps)} / ${fmtBps(a.putSpreadBps)}</div></div>
           <div class="aggregate"><div class="k">IV C / P</div><div class="v">${fmtPct(a.callIV,1)} / ${fmtPct(a.putIV,1)}</div></div>
           <div class="aggregate"><div class="k">Quote coverage</div><div class="v">${fmtPct(a.quoteCoveragePct)}</div></div>
@@ -401,6 +410,7 @@ function selectSymbol(sym){
 async function connect(){
   if (es) { es.close(); es = null; }
   if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   $('demoBanner').style.display = 'none';
 
   if (!backendUrl){ startDemoMode(); return; }
@@ -417,13 +427,25 @@ async function connect(){
   } catch(_) { /* fall through — SSE will still try, overview just shows stale symbol list */ }
 
   try{
-    es = new EventSource(backendUrl.replace(/\/$/,'') + '/api/stream');
-    es.onmessage = (e) => { try { update(JSON.parse(e.data)); } catch(_){} };
-    es.onerror = () => {
-      setStatus('error'); es.close();
-      setTimeout(() => { if (es && es.readyState === EventSource.CLOSED) startDemoMode(); }, 4000);
+    const stream = new EventSource(backendUrl.replace(/\/$/,'') + '/api/stream');
+    es = stream;
+    stream.onopen = () => { reconnectAttempts = 0; setStatus('live'); };
+    stream.onmessage = (e) => { try { update(JSON.parse(e.data)); } catch(_){} };
+    stream.onerror = () => {
+      if (es !== stream) return;
+      stream.close(); es = null;
+      scheduleReconnect();
     };
-  } catch(_) { startDemoMode(); }
+  } catch(_) { scheduleReconnect(); }
+}
+function scheduleReconnect(){
+  if (!backendUrl) { startDemoMode(); return; }
+  if (reconnectTimer) return;
+  const delay = Math.min(30000, 2000 * (2 ** Math.min(reconnectAttempts, 4)));
+  reconnectAttempts += 1;
+  setStatus('connecting');
+  $('statusText').textContent = `reconnecting in ${Math.round(delay/1000)}s`;
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
 }
 
 // ---- Demo simulator ----
