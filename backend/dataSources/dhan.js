@@ -18,6 +18,33 @@ let lastRefreshAttemptAt = 0;
 const MIN_REFRESH_INTERVAL_MS = 90 * 1000; // Dhan allows a new token once per ~2 min; stay safely under that
 const REQUEST_TIMEOUT_MS = 15_000;
 
+function numericOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function fieldNumber(fields, ...names) {
+  for (const name of names) {
+    const value = numericOrNull(fields?.[name]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function normalizeLeg(leg) {
+  return {
+    oi: fieldNumber(leg, 'oi') ?? 0,
+    previousOi: fieldNumber(leg, 'previous_oi', 'previousOi'),
+    lastPrice: fieldNumber(leg, 'last_price', 'lastPrice'),
+    volume: fieldNumber(leg, 'volume'),
+    impliedVolatility: fieldNumber(leg, 'implied_volatility', 'impliedVolatility'),
+    topBidPrice: fieldNumber(leg, 'top_bid_price', 'topBidPrice'),
+    topBidQuantity: fieldNumber(leg, 'top_bid_quantity', 'topBidQuantity'),
+    topAskPrice: fieldNumber(leg, 'top_ask_price', 'topAskPrice'),
+    topAskQuantity: fieldNumber(leg, 'top_ask_quantity', 'topAskQuantity'),
+  };
+}
+
 function fetchWithTimeout(url, options = {}) {
   return fetch(url, { ...options, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
 }
@@ -128,11 +155,9 @@ export async function fetchSnapshot(sym) {
   for (const [strikeStr, legs] of Object.entries(oc)) {
     const strike = Number(strikeStr);
     if (!Number.isFinite(strike)) continue;
-    const ce = Number(legs?.ce?.oi ?? 0);
-    const pe = Number(legs?.pe?.oi ?? 0);
     strikes[strike] = {
-      ce: Number.isFinite(ce) ? ce : 0,
-      pe: Number.isFinite(pe) ? pe : 0,
+      ce: normalizeLeg(legs?.ce),
+      pe: normalizeLeg(legs?.pe),
     };
   }
   if (!Object.keys(strikes).length) {
