@@ -13,6 +13,26 @@ your threshold.
 Runs in **demo mode** (simulated data) until you point it at a live
 backend, so you can preview the UI immediately.
 
+## What the app displays
+
+When the backend is connected to Dhan, the app shows **5-minute, 30-minute,
+and 3-hour** open-interest changes for the current ATM strike and the three
+strikes above and below it. Each strike shows separate **Call OI (CE)**,
+**Put OI (PE)**, and **Total** changes. Each time-window card also shows the
+aggregate call, put, and total change across the full ATM ±3 band.
+
+The windows are calculated from snapshots collected by the backend, not from
+Dhan's `previous_oi` field. The 5-minute card becomes available after at least
+5 minutes of history, the 30-minute card after at least 30 minutes, and the
+3-hour card after at least 3 hours. This prevents a short warm-up interval
+from being mislabeled as a full time window.
+
+The repository contains two synchronized static frontend copies:
+
+- `frontend/` is the source copy for Netlify, Vercel, or another static host.
+- `docs/` is the GitHub Pages-ready copy. Keep both copies synchronized when
+  changing the client.
+
 ## Files, and what's a secret vs. a setting
 
 | File | Contains |
@@ -25,6 +45,14 @@ To change how sensitive the alerts are, or add/remove symbols, edit
 `config.json` — no code changes needed.
 
 ## 1. Get your Dhan credentials
+
+Dhan's Option Chain endpoint is a **Data API**. Confirm that your Dhan account
+has an active Data API subscription before deployment; Dhan documents this
+requirement in its [authentication guide](https://dhanhq.co/docs/v2/authentication/).
+The project uses Dhan's official `POST /v2/optionchain` and
+`POST /v2/optionchain/expirylist` endpoints, whose response includes
+strike-wise CE/PE `oi` values and the underlying `last_price`; see the
+[official Option Chain documentation](https://dhanhq.co/docs/v2/option-chain/).
 
 1. Log into `web.dhan.co` → **My Profile → DhanHQ Trading APIs**.
 2. Copy your **Client ID**.
@@ -50,6 +78,11 @@ npm start
 ```
 
 Starts on `http://localhost:8787`. Check `http://localhost:8787/api/health`.
+
+The backend polls each configured underlying every 4 seconds. Dhan documents a
+limit of one unique Option Chain request every 3 seconds, so the default
+interval leaves headroom while NIFTY and SENSEX remain separate underlying
+requests. The backend also prevents overlapping polls for the same symbol.
 
 **To use from your iPhone**, deploy it somewhere reachable over the
 internet — localhost won't reach your phone:

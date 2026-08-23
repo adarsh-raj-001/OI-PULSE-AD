@@ -254,8 +254,9 @@ function renderCards(payload){
     }
 
     const atmRow = win.band.find(r => r.isATM);
-    win.bandDeltaCe = win.band.reduce((s, r) => s + r.dCe, 0);
-    win.bandDeltaPe = win.band.reduce((s, r) => s + r.dPe, 0);
+    const bandDeltaCe = Number.isFinite(win.bandDeltaCe) ? win.bandDeltaCe : win.band.reduce((s, r) => s + r.dCe, 0);
+    const bandDeltaPe = Number.isFinite(win.bandDeltaPe) ? win.bandDeltaPe : win.band.reduce((s, r) => s + r.dPe, 0);
+    const stepLabel = win.strikeStep == null ? 'variable' : win.strikeStep;
     const others = win.band.filter(r => !r.isATM).sort((a,b) => b.offset - a.offset); // +3..+1, -1..-3
     const isOpen = expanded[w.key];
     const totalCls = trendClass(win.bandDeltaTotal);
@@ -264,15 +265,15 @@ function renderCards(payload){
       <div class="card-top">
         <div>
           <div class="card-label">${w.label} · Near ATM OI</div>
-          <div class="card-sub">${fmtAgo(win.actualSpanMs)} · strike step ${win.strikeStep}</div>
+          <div class="card-sub">${fmtAgo(win.actualSpanMs)} · strike step ${stepLabel}</div>
         </div>
       </div>
       ${atmRow ? bandRow(atmRow, true) : ''}
       <div class="band-total">
         <span class="l">Combined change · ATM ±${others.length/2 || 3} strikes</span>
         <div class="stat3">
-          <div class="stat"><div class="lbl">Call OI</div><div class="val mono ${trendClass(win.bandDeltaCe)}">${fmtSigned(win.bandDeltaCe)}</div></div>
-          <div class="stat"><div class="lbl">Put OI</div><div class="val mono ${trendClass(win.bandDeltaPe)}">${fmtSigned(win.bandDeltaPe)}</div></div>
+          <div class="stat"><div class="lbl">Call OI</div><div class="val mono ${trendClass(bandDeltaCe)}">${fmtSigned(bandDeltaCe)}</div></div>
+          <div class="stat"><div class="lbl">Put OI</div><div class="val mono ${trendClass(bandDeltaPe)}">${fmtSigned(bandDeltaPe)}</div></div>
           <div class="stat"><div class="lbl">Total</div><div class="val mono ${totalCls}">${fmtSigned(win.bandDeltaTotal)}</div></div>
         </div>
       </div>
