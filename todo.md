@@ -16,4 +16,15 @@
 - [x] Add retained ten-hour market-history snapshots at a three-second cadence for charting.
 - [x] Add a dynamic TradingView-style price, OI, bid-ask, and Call/Put metric chart to the dashboard.
 - [x] Validate chart values, retention bounds, responsiveness, and frontend/docs synchronization.
-- [ ] Publish the reviewed historical-chart feature to main through a pull request.
+- [x] Publish the reviewed historical-chart feature to main through a pull request.
+- [x] Analyse Dhan WebSocket support and compare it with the current HTTP option-chain polling flow.
+- [x] Recommend a tick-driven and request-driven hybrid architecture before changing production code.
+- [x] Add a resilient Dhan Full Packet WebSocket client for the active ATM-band option contracts and indices.
+- [x] Merge live market-feed updates with three-second Option Chain context and retained OI calculations.
+- [x] Change chart storage and rendering from fixed three-second samples to event-driven live-feed timestamps.
+- [x] Add stream freshness, reconnect, fallback, and contract-test coverage.
+- [x] Validate the Dhan streaming feature before publication.
+- [ ] Publish the reviewed Dhan streaming feature to main through a pull request.
+- [x] Remove redundant on-chart series labels while retaining the colour legend.
+- [x] Improve mobile touch panning and vertical price-scale controls for the chart.
+- [x] Remove the permanent blue loading indicator and excess chart header divider.

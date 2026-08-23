@@ -65,10 +65,12 @@ spread: a low-coverage or wide-spread book is less informative.
 ## Ten-hour historical market chart
 
 The end of the dashboard contains an interactive **Market history** chart with
-30-minute, 3-hour, and 10-hour time-range controls. Each successful live Dhan
-snapshot adds one compact point to the chart. The target sample cadence is
-**three seconds**; the chart preserves actual timestamps, so a slow or failed
-source response is not silently represented as an on-time observation.
+30-minute, 3-hour, and 10-hour time-range controls. When the Dhan Live Market
+Feed is connected, updates to the active ATM ±3 contract band create compact
+**event-driven** chart points using received timestamps. Nearby events are
+coalesced into short buckets so same-second values do not compete on the chart
+time axis. The existing three-second Option Chain request remains the full-chain
+reconciliation and fallback path; it is not presented as a live-feed event.
 
 | Chart pane | Retained measures | Interpretation boundary |
 |---|---|---|
@@ -79,7 +81,7 @@ source response is not silently represented as an on-time observation.
 The backend retains these compact points for **10 hours** in memory and exposes
 them once through `GET /api/chart/:symbol`; the live SSE stream then sends only
 the latest point. This avoids repeatedly transferring the entire retained
-history. The chart uses [TradingView Lightweight Charts™](https://tradingview.github.io/lightweight-charts/docs/), which supports independent panes and client-side real-time series updates. The chart is a visual data summary, not a trading recommendation.
+history. The chart uses [TradingView Lightweight Charts™](https://tradingview.github.io/lightweight-charts/docs/), supports independent panes and client-side real-time updates, hides redundant in-chart series labels, and supports touch panning plus vertical axis scaling. The chart is a visual data summary, not a trading recommendation.
 
 > TradingView Lightweight Charts™ · Copyright (c) 2025 TradingView, Inc. · [tradingview.com](https://www.tradingview.com/)
 
@@ -141,6 +143,28 @@ The backend polls each configured underlying every 3 seconds, matching Dhan's
 documented limit of one unique Option Chain request every 3 seconds. NIFTY and
 SENSEX remain separate underlying requests, and the backend prevents
 overlapping polls for the same symbol if a response takes longer than expected.
+
+### Dhan Live Market Feed
+
+With `dataSource: "dhan"` and `liveFeedEnabled: true`, the backend also opens
+one authenticated **server-side** Dhan Full Packet WebSocket connection. It
+subscribes to the two tracked indices and the current nearest-expiry ATM ±3
+Call/Put contracts. The Option Chain response supplies the active option
+`security_id` values; the live feed then updates current LTP, OI, day volume,
+and five-level bid/ask state for that active band between REST reconciliations.
+
+The browser does **not** connect to Dhan directly and never receives Dhan
+credentials. It continues using the resilient OI Pulse SSE endpoint. The live
+feed decoder handles Dhan's little-endian binary Full Packets, automatically
+reconnects and re-subscribes after a close, reuses the backend's TOTP token
+refresh path, and falls back to the three-second Option Chain snapshots while
+the stream is reconnecting. Set `DISABLE_DHAN_LIVE_FEED=true` only to force the
+REST-only fallback during diagnostics.
+
+Dhan describes WebSocket delivery as event-based market-data snapshots. OI
+Pulse therefore labels the history as **event-driven live data** rather than
+claiming exchange-native every-trade capture. It is intended as a market-data
+dashboard, not an execution system or a trading recommendation.
 
 ### Keeping a Render service awake
 
