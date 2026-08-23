@@ -11,6 +11,7 @@ import { secrets, config, notificationsEnabled } from './config.js';
 import { addSubscription, removeSubscription, checkThresholds } from './notifications.js';
 import * as dhanSource from './dataSources/dhan.js';
 import * as nseFreeSource from './dataSources/nseFree.js';
+import { buildMarketStrength } from './marketStrength.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
@@ -50,6 +51,12 @@ function bandStep(strikes) {
   return steps.length && steps.every((step) => step === steps[0]) ? steps[0] : null;
 }
 
+function legOi(leg) {
+  const value = typeof leg === 'object' && leg !== null ? leg.oi : leg;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 // Builds the ATM +/- N strike band for the *current* snapshot, then diffs
 // each of those strikes against the reference snapshot for a given window.
 function bandDelta(hist, nowMs, windowMs) {
@@ -79,10 +86,10 @@ function bandDelta(hist, nowMs, windowMs) {
     const strike = allStrikes[strikeIndex];
     const curLeg = cur.strikes[strike];
     const refLeg = ref.strikes[strike];
-    if (!curLeg) continue; // strike went out of chain range, skip
-    const prevLeg = refLeg || { ce: 0, pe: 0 };
-    const dCe = curLeg.ce - prevLeg.ce;
-    const dPe = curLeg.pe - prevLeg.pe;
+    if (!curLeg || !refLeg) continue; // skip a strike that was not present in both snapshots
+    const prevLeg = refLeg;
+    const dCe = legOi(curLeg.ce) - legOi(prevLeg.ce);
+    const dPe = legOi(curLeg.pe) - legOi(prevLeg.pe);
     const dTotal = dCe + dPe;
     bandDeltaCe += dCe;
     bandDeltaPe += dPe;
@@ -100,6 +107,7 @@ function bandDelta(hist, nowMs, windowMs) {
     bandDeltaCe,
     bandDeltaPe,
     bandDeltaTotal,
+    marketStrength: buildMarketStrength({ cur, ref, band, actualSpanMs: cur.t - ref.t }),
   };
 }
 

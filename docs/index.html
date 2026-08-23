@@ -48,6 +48,35 @@
   .ovcard .px{font-size:19px; font-weight:600; margin-top:4px;}
   .ovcard .atm{font-size:11.5px; color:var(--text-dim); margin-top:2px;}
 
+  /* ---- Transparent market-strength read ---- */
+  .strength-card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px;}
+  .strength-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
+  .strength-title{font-size:14px; font-weight:700; letter-spacing:.02em;}
+  .strength-sub{font-size:11px; color:var(--text-faint); margin-top:3px;}
+  .strength-state{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; padding:5px 7px; border-radius:6px; white-space:nowrap; background:var(--surface-alt); color:var(--text-dim);}
+  .strength-state.up{color:var(--rise); background:rgba(52,211,153,.11);}
+  .strength-state.down{color:var(--fall); background:rgba(251,111,111,.11);}
+  .strength-state.neutral{color:var(--warn); background:rgba(240,185,61,.11);}
+  .strength-gauge{position:relative; height:14px; margin:17px 2px 6px; border-radius:20px; overflow:hidden; background:linear-gradient(90deg, rgba(251,111,111,.44) 0%, rgba(251,111,111,.15) 38%, #2A3040 50%, rgba(52,211,153,.15) 62%, rgba(52,211,153,.44) 100%); border:1px solid var(--border);}
+  .strength-center{position:absolute; left:50%; top:-1px; bottom:-1px; width:1px; background:var(--text-faint); z-index:1;}
+  .strength-marker{position:absolute; top:50%; width:18px; height:18px; border-radius:50%; transform:translate(-50%,-50%); background:var(--surface); border:3px solid var(--accent); box-shadow:0 0 0 3px rgba(79,216,232,.12); z-index:2;}
+  .strength-marker.up{border-color:var(--rise);} .strength-marker.down{border-color:var(--fall);} .strength-marker.neutral{border-color:var(--warn);}
+  .strength-scale{display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em;}
+  .strength-summary{margin-top:13px; padding:11px 12px; border-radius:10px; background:var(--surface-alt); border:1px solid var(--border); font-size:12.5px; line-height:1.4; color:var(--text-dim);}
+  .strength-summary strong{color:var(--text);}
+  .strength-kpis{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:10px;}
+  .strength-kpi{padding:9px 8px; background:var(--surface-alt); border-radius:9px; border:1px solid var(--border); min-width:0;}
+  .strength-kpi .k{font-size:9px; letter-spacing:.07em; color:var(--text-faint); text-transform:uppercase; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .strength-kpi .v{margin-top:3px; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .aggregate-details{margin-top:11px; border-top:1px solid var(--border); padding-top:10px;}
+  .aggregate-details summary{cursor:pointer; list-style:none; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-faint);}
+  .aggregate-details summary::-webkit-details-marker{display:none;}
+  .aggregate-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:7px; margin-top:10px;}
+  .aggregate{padding:9px 10px; border-radius:9px; background:var(--surface-alt); border:1px solid var(--border);}
+  .aggregate .k{font-size:9px; letter-spacing:.07em; color:var(--text-faint); text-transform:uppercase;}
+  .aggregate .v{margin-top:3px; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:var(--text);}
+  .strength-foot{margin-top:10px; font-size:10.5px; line-height:1.45; color:var(--text-faint);}
+
   main{padding:14px 18px 32px; display:flex; flex-direction:column; gap:12px;}
   .card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px 16px 14px;}
   .card-top{display:flex; justify-content:space-between; align-items:flex-start;}
@@ -186,6 +215,57 @@ function fmtAgo(ms){
 }
 function trendClass(n){ return n>0?'rise':n<0?'fall':'neutral'; }
 function offsetLabel(o){ return o===0 ? 'ATM' : (o>0?'+'+o:o); }
+function finite(n){ const v=Number(n); return Number.isFinite(v) ? v : null; }
+function fmtBps(n){ const v=finite(n); return v===null ? '—' : (v>0?'+':v<0?'−':'') + Math.abs(v).toFixed(0) + ' bp'; }
+function fmtPct(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toFixed(digits) + '%'; }
+function fmtRatio(n){ const v=finite(n); return v===null ? '—' : v.toFixed(2) + '×'; }
+
+function strengthPanel(windows){
+  const preferred = WINDOWS.map(w => ({ key:w.key, label:w.label, win:windows?.[w.key] })).find(entry => entry.win?.marketStrength);
+  if (!preferred) {
+    return `<section class="strength-card"><div class="strength-head"><div><div class="strength-title">Market strength</div><div class="strength-sub">Awaiting Dhan premium and top bid/ask aggregates</div></div><span class="strength-state neutral">Data warming</span></div><div class="strength-summary">The direction bar appears after an exact OI window and complete live option quotes are available.</div></section>`;
+  }
+  const ms = preferred.win.marketStrength;
+  const score = finite(ms.score);
+  const direction = score===null ? 'neutral' : score>.05 ? 'up' : score<-.05 ? 'down' : 'neutral';
+  const marker = score===null ? 50 : Math.max(3, Math.min(97, (score + 1) * 50));
+  const a = ms.aggregates || {}, d = ms.drivers || {};
+  const callImbalance = finite(d.callBookImbalance), putImbalance = finite(d.putBookImbalance);
+  const quoteText = callImbalance===null || putImbalance===null ? '—' : `C ${fmtPct(callImbalance*100)} · P ${fmtPct(putImbalance*100)}`;
+  const strongSide = a.strongerSide || 'Balanced activity';
+  return `
+    <section class="strength-card" aria-label="Market strength based on ${preferred.label} data">
+      <div class="strength-head">
+        <div><div class="strength-title">Market strength · ${preferred.label}</div><div class="strength-sub">Exact ${fmtAgo(preferred.win.actualSpanMs)} snapshot window · confidence ${fmtPct(ms.confidence)}</div></div>
+        <span class="strength-state ${direction}">${ms.label || 'Limited data'}</span>
+      </div>
+      <div class="strength-gauge" role="meter" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="${score===null?'':score}" aria-label="Directional intensity">
+        <div class="strength-center"></div><div class="strength-marker ${direction}" style="left:${marker}%"></div>
+      </div>
+      <div class="strength-scale"><span>Down</span><span>Balanced</span><span>Up</span></div>
+      <div class="strength-summary"><strong>${ms.behavior || 'No directional interpretation available.'}</strong> Intensity: ${ms.intensity===null||ms.intensity===undefined?'—':ms.intensity + '/100'}. ${strongSide} is shown as activity context, not directional proof.</div>
+      <div class="strength-kpis">
+        <div class="strength-kpi"><div class="k">Underlying</div><div class="v ${trendClass(d.priceBps)}">${fmtBps(d.priceBps)}</div></div>
+        <div class="strength-kpi"><div class="k">Premium C / P</div><div class="v">${fmtBps(d.callPremiumBps)} / ${fmtBps(d.putPremiumBps)}</div></div>
+        <div class="strength-kpi"><div class="k">Top-book C / P</div><div class="v">${quoteText}</div></div>
+      </div>
+      <details class="aggregate-details"><summary>Show aggregate inputs and liquidity</summary>
+        <div class="aggregate-grid">
+          <div class="aggregate"><div class="k">Window OI · Call</div><div class="v ${trendClass(a.callWindowOiChange)}">${fmtSigned(a.callWindowOiChange)}</div></div>
+          <div class="aggregate"><div class="k">Window OI · Put</div><div class="v ${trendClass(a.putWindowOiChange)}">${fmtSigned(a.putWindowOiChange)}</div></div>
+          <div class="aggregate"><div class="k">Current OI PCR</div><div class="v">${fmtRatio(a.putCallOiRatio)}</div></div>
+          <div class="aggregate"><div class="k">Volume PCR</div><div class="v">${fmtRatio(a.putCallVolumeRatio)}</div></div>
+          <div class="aggregate"><div class="k">Session OI C / P</div><div class="v">${fmtSigned(a.callSessionOiChange)} / ${fmtSigned(a.putSessionOiChange)}</div></div>
+          <div class="aggregate"><div class="k">Volume C / P</div><div class="v">${fmtInt(a.callVolume)} / ${fmtInt(a.putVolume)}</div></div>
+          <div class="aggregate"><div class="k">Spread C / P</div><div class="v">${fmtBps(a.callSpreadBps)} / ${fmtBps(a.putSpreadBps)}</div></div>
+          <div class="aggregate"><div class="k">IV C / P</div><div class="v">${fmtPct(a.callIV,1)} / ${fmtPct(a.putIV,1)}</div></div>
+          <div class="aggregate"><div class="k">Quote coverage</div><div class="v">${fmtPct(a.quoteCoveragePct)}</div></div>
+          <div class="aggregate"><div class="k">Activity split</div><div class="v">C ${fmtPct(a.callSideStrength)} · P ${fmtPct(a.putSideStrength)}</div></div>
+        </div>
+      </details>
+      <div class="strength-foot">Direction uses underlying return, relative Call-versus-Put premium movement, and top-of-book imbalance. OI and volume are activity context. This is a data summary, not a price forecast or trade signal.</div>
+    </section>`;
+}
 
 function renderOverview(){
   const container = $('overview');
@@ -238,6 +318,8 @@ function renderCards(payload){
     container.innerHTML = `<div class="empty">Gathering data — bands appear once enough history builds up.</div>`;
     return;
   }
+
+  container.insertAdjacentHTML('beforeend', strengthPanel(payload.windows));
 
   for (const w of WINDOWS){
     const win = payload.windows[w.key];
