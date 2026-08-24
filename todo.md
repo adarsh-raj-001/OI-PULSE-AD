@@ -89,3 +89,7 @@
 - [x] Add a configurable premium offset that creates transparent pending paper limit entries and fills only on a fresh live option LTP at or better than the requested level.
 - [x] Validate session gating, persistent settings, numeric validation, pending/fill/expiry behavior, global Dhan request safeguards, and frontend/docs parity.
 - [x] Publish the reviewed market-hours and numeric paper-entry controls through a pull request.
+- [x] Merge approved PR #15 into main and verify the live market-hours pause, numeric controls, and pending paper-entry behavior.
+- [x] Add and validate a minimal weekday 09:15 India-market wake mechanism so an overnight-sleeping Render service can resume the enabled market session automatically.
+- [x] Publish the reviewed market-open wake mechanism through a pull request.
+- [x] Implement the confirmed Option A weekday 09:15 Asia/Kolkata health wake using a minimal secret-free repository workflow.

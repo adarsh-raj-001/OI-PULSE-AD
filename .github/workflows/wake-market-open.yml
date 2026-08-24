@@ -1,0 +1,23 @@
+name: Wake OI Pulse at market open
+
+on:
+  schedule:
+    # GitHub Actions schedules are UTC. 03:45 UTC is 09:15 Asia/Kolkata.
+    - cron: '45 3 * * 1-5'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  wake-render:
+    name: Wake Render for the India market session
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Request the public health endpoint
+        run: |
+          curl --fail --silent --show-error \
+            --max-time 90 \
+            --retry 2 \
+            --retry-delay 10 \
+            https://oi-pulse-backend-60u1.onrender.com/api/health
