@@ -25,7 +25,9 @@ The windows are calculated from snapshots collected by the backend, not from
 Dhan's `previous_oi` field. The 5-minute card becomes available after at least
 5 minutes of history, the 30-minute card after at least 30 minutes, and the
 3-hour card after at least 3 hours. This prevents a short warm-up interval
-from being mislabeled as a full time window.
+from being mislabeled as a full time window. With durable history configured,
+the backend restores the retained raw references after a restart instead of
+requiring every window to warm up again.
 
 ## Market strength panel
 
@@ -81,7 +83,7 @@ reconciliation and fallback path; it is not presented as a live-feed event.
 The backend retains these compact points for **10 hours** in memory and exposes
 them once through `GET /api/chart/:symbol`; the live SSE stream then sends only
 the latest point. This avoids repeatedly transferring the entire retained
-history. The chart uses [TradingView Lightweight Charts™](https://tradingview.github.io/lightweight-charts/docs/), supports independent panes and client-side real-time updates, hides redundant in-chart series labels, and supports touch panning plus vertical axis scaling. The chart is a visual data summary, not a trading recommendation.
+history. The chart uses [TradingView Lightweight Charts™](https://tradingview.github.io/lightweight-charts/docs/), supports independent panes and client-side real-time updates, hides redundant in-chart series labels, and supports touch panning plus vertical axis scaling. The chart is a visual data summary, not a trading recommendation. The durable store below protects the **raw OI snapshots used by 5m/30m/3h calculations**; chart-point persistence is deliberately separate.
 
 > TradingView Lightweight Charts™ · Copyright (c) 2025 TradingView, Inc. · [tradingview.com](https://www.tradingview.com/)
 
@@ -183,7 +185,41 @@ URL. If another host does not provide that variable, set `SELF_PING_URL` to
 the public backend URL. The browser now preserves the last live state and
 retries an interrupted SSE connection with capped exponential backoff instead
 of falling back to simulated data after four seconds. A service that is already
-asleep still needs an external uptime monitor or a non-sleeping hosting plan.
+asleeep still needs an external uptime monitor or a non-sleeping hosting plan.
+
+### Durable 5-minute, 30-minute, and 3-hour OI history
+
+The backend's current-process memory always handles live calculations first,
+but a Render restart or redeploy would otherwise discard it. Configure
+`OI_HISTORY_DATABASE_URL` with a PostgreSQL connection string to retain compact
+raw OI snapshots for the same 3.6-hour retention window used by the exact OI
+cards. The backend restores those snapshots before polling Dhan, so it can
+resume exact 5-minute, 30-minute, and 3-hour references without inventing a
+shorter window.
+
+The settings sheet provides independent **Reset NIFTY history** and **Reset
+SENSEX history** controls. A confirmed reset deletes only that symbol's retained
+raw references, clears its chart series, and creates a new baseline from the
+latest real Dhan market snapshot already held by the backend. It never uses a
+zero-valued placeholder and never triggers an extra Dhan Option Chain request.
+After reset, each exact card states that it is collecting from the new baseline
+until its full 5-minute, 30-minute, or 3-hour period has elapsed. The other
+symbol's history is unaffected.
+
+| Storage choice | Restart-safe OI windows | Trade-off |
+|---|---|---|
+| No database URL | No; history is only available while this backend process remains alive. | Zero setup, but each restart requires warm-up. |
+| Render PostgreSQL with an internal `OI_HISTORY_DATABASE_URL` | Yes; this is the recommended production configuration. | Requires a database in the same Render region. A free Render Postgres database is for testing only and expires after 30 days. |
+| Paid Render persistent disk | Possible with a filesystem store, but not used by this implementation. | Less suitable than a managed database for structured snapshots and prevents zero-downtime deploys. |
+
+Create a Render Postgres database in the same region as the backend, then add
+its **internal** connection URL in the backend service's Environment settings
+as `OI_HISTORY_DATABASE_URL` and redeploy. The URL is secret and must never be
+committed. On startup, Render logs should report `Durable OI history: ready`
+and the number of restored snapshots. If the database is temporarily
+unavailable, OI Pulse keeps operating in memory, reports a degraded storage
+status from `/api/config`, and resumes durable writes once the connection works
+again.
 
 **To use from your iPhone**, deploy it somewhere reachable over the
 internet — localhost won't reach your phone:
