@@ -26,6 +26,8 @@ const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 // symbol -> array of { t, underlyingPrice, strikes: { [strike]: {ce, pe} } }
 const history = Object.fromEntries(config.symbols.map((s) => [s.name, []]));
 const historyResetInFlight = new Set();
+let fullSessionResetInFlight = null;
+const sessionResetBaselinePending = new Set();
 
 // Postgres is optional at code level so local/demo development remains simple.
 // In production, configuring OI_HISTORY_DATABASE_URL makes the raw snapshots
@@ -229,6 +231,7 @@ function refreshLiveSubscriptions() {
 }
 
 function applyLivePacket(packet) {
+  if (fullSessionResetInFlight) return;
   if (!marketSessionState.active) return;
   const ref = liveInstrumentRefs.get(`${packet.exchangeSegment}:${packet.securityId}`);
   if (!ref) return;
@@ -295,7 +298,12 @@ async function pollSymbol(sym) {
     } else {
       // First snapshot and every degraded/live-feed-reconnect period retain the
       // existing REST fallback rather than leaving the dashboard empty.
-      recordSnapshot(sym.name, { ...liveState[sym.name], resetBaseline: !hasRetainedHistory, baselineReason: 'initial-real-market-snapshot' }, t, { restState: 'live' });
+      const sessionStartBaseline = sessionResetBaselinePending.delete(sym.name);
+      recordSnapshot(sym.name, {
+        ...liveState[sym.name],
+        resetBaseline: !hasRetainedHistory,
+        baselineReason: sessionStartBaseline ? 'session-start-real-market-snapshot' : 'initial-real-market-snapshot',
+      }, t, { restState: 'live' });
     }
     return { retryAfterMs: 0 };
   } catch (err) {
@@ -344,6 +352,38 @@ async function resetSymbolHistory(name) {
   }
 }
 
+async function resetFullSessionHistory(sessionKey, timestamp) {
+  const resetState = paperTrading.snapshot().lastSessionReset;
+  if (resetState?.sessionKey === sessionKey) return resetState;
+  if (fullSessionResetInFlight) return fullSessionResetInFlight;
+  fullSessionResetInFlight = (async () => {
+    const paperState = await paperTrading.resetSession({ sessionKey, timestamp });
+    for (const sym of config.symbols) {
+      const name = sym.name;
+      historyResetInFlight.add(name);
+      try {
+        await historyStore.reset(name);
+        history[name].length = 0;
+        chartHistory[name].length = 0;
+        liveState[name] = null;
+        latest[name] = null;
+        restState[name] = 'starting';
+        sessionResetBaselinePending.add(name);
+      } finally {
+        historyResetInFlight.delete(name);
+      }
+    }
+    liveInstrumentRefs.clear();
+    liveFeed?.setSubscriptions([]);
+    console.log(`[session-reset] ${sessionKey}: cleared retained OI/chart history and ${paperState.lastSessionReset?.clearedRecords || 0} paper record(s)`);
+    broadcast();
+    broadcastPaperTrades();
+    broadcastSessionReset(paperState.lastSessionReset);
+    return paperState.lastSessionReset;
+  })().finally(() => { fullSessionResetInFlight = null; });
+  return fullSessionResetInFlight;
+}
+
 function pollLoop() {
   // Production logs showed simultaneous NIFTY/SENSEX Option Chain calls
   // receiving 429 responses. Treat the Dhan limit as global for this account:
@@ -363,10 +403,13 @@ async function syncMarketSession(timestamp = Date.now(), force = false) {
     enabled: rules.marketHoursEnabled,
     timestamp,
   });
+  if (rules.sessionResetEnabled !== false && next.regularSessionActive) {
+    await resetFullSessionHistory(next.localDate, timestamp);
+  }
   const changed = next.active !== marketSessionState.active
     || next.enabled !== marketSessionState.enabled
     || next.reason !== marketSessionState.reason;
-  marketSessionState = next;
+  marketSessionState = { ...next, lastSessionReset: paperTrading.snapshot().lastSessionReset };
   if (!changed && !force) return next;
   await paperTrading.setMarketSession(next);
   refreshLiveSubscriptions();
@@ -497,6 +540,12 @@ function broadcast() {
 function broadcastPaperTrades() {
   const payload = JSON.stringify(paperTrading.snapshot());
   for (const client of sseClients) client.write(`event: paper-trades\ndata: ${payload}\n\n`);
+}
+
+function broadcastSessionReset(reset) {
+  if (!reset) return;
+  const payload = JSON.stringify(reset);
+  for (const client of sseClients) client.write(`event: session-reset\ndata: ${payload}\n\n`);
 }
 setInterval(broadcast, config.ssePushIntervalMs);
 // Time-based paper exits are local deterministic checks. They neither fetch a

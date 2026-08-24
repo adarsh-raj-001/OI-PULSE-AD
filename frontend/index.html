@@ -252,6 +252,10 @@
         <label class="paper-switch" aria-label="Enable automatic market hours"><input id="paperMarketHoursEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
       </div>
       <div class="paper-switch-row">
+        <div><div class="paper-switch-title">Fresh history at market open</div><div class="paper-switch-note">At the first weekday 09:15 India-time session check, clears retained OI/chart history and paper records for a new day. This permanently removes the prior paper ledger and OI/chart history.</div></div>
+        <label class="paper-switch" aria-label="Reset OI and paper history at market open"><input id="paperSessionResetEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
+      </div>
+      <div class="paper-switch-row">
         <div><div class="paper-switch-title">Trade NIFTY paper signals</div><div class="paper-switch-note">Disabling NIFTY blocks new NIFTY simulations and closes any open NIFTY paper position at its last observed option premium.</div></div>
         <label class="paper-switch" aria-label="Enable NIFTY paper trading"><input id="paperNiftyEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
       </div>
@@ -310,7 +314,7 @@ let demoTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let latestData = {};
-let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ enabled:false, lots:10, symbolEnabled:{NIFTY:true,SENSEX:true}, marketHoursEnabled:true, strengthThreshold:60, entryPremiumOffset:0, targetPoints:2, stopLossPoints:5, maxAliveSeconds:0, cooldownSeconds:0 }, marketSession:{enabled:true,active:true,opensAt:'09:15',closesAt:'15:30',timeZone:'Asia/Kolkata'}, contractLotSizes:{NIFTY:65,SENSEX:20}, trades:[] };
+let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ enabled:false, lots:10, symbolEnabled:{NIFTY:true,SENSEX:true}, marketHoursEnabled:true, sessionResetEnabled:true, strengthThreshold:60, entryPremiumOffset:0, targetPoints:2, stopLossPoints:5, maxAliveSeconds:0, cooldownSeconds:0 }, marketSession:{enabled:true,active:true,opensAt:'09:15',closesAt:'15:30',timeZone:'Asia/Kolkata'}, contractLotSizes:{NIFTY:65,SENSEX:20}, trades:[] };
 let currentView = 'live';
 let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
 const chartState = {
@@ -662,6 +666,7 @@ function renderPaperControls(){
   const editable=storage.mode==='postgres' && storage.status==='ready';
   $('paperEnabled').checked=rules.enabled===true;
   $('paperMarketHoursEnabled').checked=rules.marketHoursEnabled!==false;
+  $('paperSessionResetEnabled').checked=rules.sessionResetEnabled!==false;
   $('paperNiftyEnabled').checked=rules.symbolEnabled?.NIFTY!==false;
   $('paperSensexEnabled').checked=rules.symbolEnabled?.SENSEX!==false;
   $('paperLots').value=String(rules.lots??10);
@@ -671,12 +676,14 @@ function renderPaperControls(){
   $('paperStop').value=String(rules.stopLossPoints??5);
   $('paperAlive').value=String(rules.maxAliveSeconds??0);
   $('paperCooldown').value=String(rules.cooldownSeconds??0);
-  document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperEnabled, #paperMarketHoursEnabled, #paperNiftyEnabled, #paperSensexEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
+  document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperEnabled, #paperMarketHoursEnabled, #paperSessionResetEnabled, #paperNiftyEnabled, #paperSensexEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
   const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open').length;
   $('paperEnabledNote').textContent=!editable?'Durable PostgreSQL storage is required for controls.':rules.enabled?'Enabled · qualifying signals may create simulated records.':'Disabled · new simulated entries are blocked.';
   const session=paperTradeState?.marketSession||{};
   const sessionText=rules.marketHoursEnabled===false?'Automatic market-hours pause overridden manually.':session.active===false?`Market session paused (${session.reason||'off hours'}); Dhan collection and new paper entries resume at ${session.opensAt||'09:15'} ${session.timeZone||'Asia/Kolkata'}.`:`Market session active until ${session.closesAt||'15:30'} ${session.timeZone||'Asia/Kolkata'}.`;
-  $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${sessionText} ${openCount} simulated trade${openCount===1?'':'s'} open. NIFTY is ${rules.symbolEnabled?.NIFTY!==false?'enabled':'disabled'}; SENSEX is ${rules.symbolEnabled?.SENSEX!==false?'enabled':'disabled'}.`;
+  const reset=paperTradeState?.lastSessionReset||session.lastSessionReset;
+  const resetText=rules.sessionResetEnabled===false?'Full session reset is disabled.':reset?.sessionKey?` Full reset completed for ${reset.sessionKey}.`:' Full OI/chart and paper-history reset is armed for the next 09:15 session.';
+  $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${sessionText} ${openCount} simulated trade${openCount===1?'':'s'} open. NIFTY is ${rules.symbolEnabled?.NIFTY!==false?'enabled':'disabled'}; SENSEX is ${rules.symbolEnabled?.SENSEX!==false?'enabled':'disabled'}.${resetText}`;
 }
 
 function setView(view){
@@ -854,6 +861,7 @@ async function connect(){
     stream.onopen = () => { reconnectAttempts = 0; setStatus('live'); };
     stream.onmessage = (e) => { try { update(JSON.parse(e.data)); } catch(_){} };
     stream.addEventListener('paper-trades',(e)=>{ try { updatePaperTrades(JSON.parse(e.data)); } catch(_){} });
+    stream.addEventListener('session-reset',(e)=>{ try { const reset=JSON.parse(e.data); chartState.points=[]; chartState.loaded=false; setChartEmpty('Fresh market session reset · awaiting the first live snapshot…'); if (currentView==='paper') renderPaperTrades(); if (symbol) loadChartHistory(symbol); $('statusText').textContent=`fresh session reset · ${reset.sessionKey}`; } catch(_){} });
     stream.onerror = () => {
       if (es !== stream) return;
       stream.close(); es = null;
@@ -1051,6 +1059,7 @@ async function savePaperControls({switchChanged=false}={}){
     lots:Number($('paperLots').value),
     symbolEnabled:{NIFTY:$('paperNiftyEnabled').checked,SENSEX:$('paperSensexEnabled').checked},
     marketHoursEnabled:$('paperMarketHoursEnabled').checked,
+    sessionResetEnabled:$('paperSessionResetEnabled').checked,
     strengthThreshold:Number($('paperStrengthThreshold').value),
     entryPremiumOffset:Number($('paperEntryOffset').value),
     targetPoints:Number($('paperTarget').value),
@@ -1090,6 +1099,7 @@ async function savePaperControls({switchChanged=false}={}){
 $('paperSaveBtn').onclick=()=>savePaperControls();
 $('paperEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 $('paperMarketHoursEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
+$('paperSessionResetEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 $('paperNiftyEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 $('paperSensexEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 

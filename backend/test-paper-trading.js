@@ -8,6 +8,7 @@ class MemoryStore {
   saveTrade(trade) { const index = this.trades.findIndex((item) => item.id === trade.id); if (index >= 0) this.trades[index] = structuredClone(trade); else this.trades.push(structuredClone(trade)); return Promise.resolve(true); }
   saveSignalState(symbol, signal) { this.signalStates[symbol] = signal; return Promise.resolve(true); }
   saveSettings(settings) { this.settings = structuredClone(settings); return Promise.resolve(true); }
+  clearSessionHistory() { this.trades.splice(0, this.trades.length); this.signalStates = {}; return Promise.resolve(true); }
   getStatus() { return { mode: 'postgres', status: 'ready', lastError: null }; }
   isReady() { return true; }
 }
@@ -183,6 +184,34 @@ await pendingEngine.setMarketSession({ active: false, reason: 'after-close' });
 await pendingEngine.process('NIFTY', payload('Strong upward pressure'), summary(100, 120, 53_000), 53_000);
 assert.equal(pendingEngine.snapshot().trades.length, 1, 'a paused market session must block new paper entries');
 await pendingEngine.setMarketSession({ active: true, reason: 'open' });
+
+const sessionStore = new MemoryStore();
+const sessionEngine = createPaperTradeEngine({ store: sessionStore, rules: defaults, contractLotSizes });
+await sessionEngine.restore();
+await sessionEngine.process('NIFTY', payload('Strong upward pressure'), summary(100, 120, 60_000), 60_000);
+await sessionEngine.updateSettings({ entryPremiumOffset: -2 }, 60_001);
+await sessionEngine.process('SENSEX', payload('Strong downward pressure'), summary(100, 120, 60_002), 60_002);
+state = sessionEngine.snapshot();
+assert.equal(state.trades.filter((trade) => trade.status === 'open').length, 1, 'session reset setup includes an active paper entry');
+assert.equal(state.trades.filter((trade) => trade.status === 'pending').length, 1, 'session reset setup includes a pending paper entry');
+await sessionEngine.resetSession({ sessionKey: '2026-08-24', timestamp: 61_000 });
+state = sessionEngine.snapshot();
+assert.deepEqual(state.trades, [], 'session reset must clear in-memory paper ledger after lifecycle closure');
+assert.deepEqual(sessionStore.trades, [], 'session reset must remove durable paper records after lifecycle closure');
+assert.deepEqual(sessionStore.signalStates, {}, 'session reset must remove durable paper signal guards');
+assert.equal(state.rules.enabled, true, 'session reset must retain the paper simulator enabled setting');
+assert.equal(state.rules.entryPremiumOffset, -2, 'session reset must retain configurable paper settings');
+assert.deepEqual(state.lastSessionReset, {
+  sessionKey: '2026-08-24', resetAt: 61_000, reason: 'session-reset', clearedRecords: 2, closedOpenEntries: 1, cancelledPendingEntries: 1,
+});
+assert.deepEqual(sessionStore.settings.lastSessionReset, state.lastSessionReset, 'reset audit metadata must persist with retained settings');
+await sessionEngine.resetSession({ sessionKey: '2026-08-24', timestamp: 62_000 });
+assert.equal(sessionEngine.snapshot().lastSessionReset.resetAt, 61_000, 'same session key must not reset twice after restart or duplicate scheduler checks');
+
+const sessionRestored = createPaperTradeEngine({ store: sessionStore, rules: defaults, contractLotSizes });
+await sessionRestored.restore();
+assert.equal(sessionRestored.snapshot().trades.length, 0, 'a restarted engine must retain the cleared paper ledger');
+assert.equal(sessionRestored.snapshot().lastSessionReset.sessionKey, '2026-08-24', 'a restarted engine must retain reset idempotency metadata');
 
 const settingsRestored = createPaperTradeEngine({ store: controlStore, rules: defaults, contractLotSizes });
 await settingsRestored.restore();

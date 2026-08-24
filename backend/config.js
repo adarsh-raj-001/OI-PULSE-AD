@@ -79,6 +79,7 @@ export const config = {
     lots: Number(tunables.paperTrading?.lots) || 10,
     symbolEnabled: tunables.paperTrading?.symbolEnabled || { NIFTY: true, SENSEX: true },
     marketHoursEnabled: tunables.paperTrading?.marketHoursEnabled !== false,
+    sessionResetEnabled: tunables.paperTrading?.sessionResetEnabled !== false,
     marketSession: tunables.paperTrading?.marketSession || { timeZone: 'Asia/Kolkata', opensAt: '09:15', closesAt: '15:30' },
     contractLotSizes: tunables.paperTrading?.contractLotSizes || { NIFTY: 65, SENSEX: 20 },
     strengthThreshold: Number(tunables.paperTrading?.strengthThreshold) || 60,

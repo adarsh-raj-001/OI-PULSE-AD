@@ -56,6 +56,10 @@ function normalizeRules(input = {}, base = {}) {
     lots,
     symbolEnabled,
     marketHoursEnabled: input.marketHoursEnabled === undefined ? base.marketHoursEnabled !== false : input.marketHoursEnabled === true,
+    sessionResetEnabled: input.sessionResetEnabled === undefined ? base.sessionResetEnabled !== false : input.sessionResetEnabled === true,
+    lastSessionReset: input.lastSessionReset && typeof input.lastSessionReset === 'object'
+      ? { ...input.lastSessionReset }
+      : base.lastSessionReset && typeof base.lastSessionReset === 'object' ? { ...base.lastSessionReset } : null,
     strengthThreshold,
     entryPremiumOffset: premiumOffset(input.entryPremiumOffset, base.entryPremiumOffset ?? 0),
     targetPoints: positiveNumber(input.targetPoints, base.targetPoints ?? 2, 'Target'),
@@ -127,6 +131,8 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     lots: 10,
     symbolEnabled: Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, true])),
     marketHoursEnabled: true,
+    sessionResetEnabled: true,
+    lastSessionReset: null,
     strengthThreshold: 60,
     entryPremiumOffset: 0,
     targetPoints: 2,
@@ -177,7 +183,7 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
   }
 
   function snapshot() {
-    return { enabled, storage: store.getStatus(), rules: { ...currentRules }, marketSession: { ...marketSession }, contractLotSizes: { ...currentContractLotSizes }, trades: [...trades].sort((a, b) => Number(b.requestedAt || b.openedAt || 0) - Number(a.requestedAt || a.openedAt || 0)), performance: performance() };
+    return { enabled, storage: store.getStatus(), rules: { ...currentRules }, lastSessionReset: currentRules.lastSessionReset ? { ...currentRules.lastSessionReset } : null, marketSession: { ...marketSession }, contractLotSizes: { ...currentContractLotSizes }, trades: [...trades].sort((a, b) => Number(b.requestedAt || b.openedAt || 0) - Number(a.requestedAt || a.openedAt || 0)), performance: performance() };
   }
 
   function changed() { onChange(snapshot()); }
@@ -349,6 +355,43 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     }
   }
 
+  function resetSession({ sessionKey, timestamp = now() } = {}) {
+    const operation = queue.then(async () => {
+      if (!store.isReady()) { const error = new Error('Paper session reset is unavailable until durable PostgreSQL storage is ready.'); error.statusCode = 503; throw error; }
+      if (!sessionKey || typeof sessionKey !== 'string') throw new Error('A valid paper session key is required for reset.');
+      if (currentRules.lastSessionReset?.sessionKey === sessionKey) return snapshot();
+      const entries = trades.filter((trade) => trade.status === 'open' || trade.status === 'pending');
+      const openEntries = entries.filter((trade) => trade.status === 'open').length;
+      const pendingEntries = entries.length - openEntries;
+      const clearedRecords = trades.length;
+      await disableAndClose(timestamp, null, 'session-reset');
+      if (await store.clearSessionHistory() !== true) {
+        const error = new Error('Paper session reset could not clear durable paper records.');
+        error.statusCode = 503;
+        throw error;
+      }
+      trades.splice(0, trades.length);
+      for (const symbol of Object.keys(signalStates)) delete signalStates[symbol];
+      for (const symbol of Object.keys(cooldownUntil)) delete cooldownUntil[symbol];
+      currentRules = {
+        ...currentRules,
+        lastSessionReset: {
+          sessionKey,
+          resetAt: timestamp,
+          reason: 'session-reset',
+          clearedRecords,
+          closedOpenEntries: openEntries,
+          cancelledPendingEntries: pendingEntries,
+        },
+      };
+      await store.saveSettings(currentRules, timestamp);
+      changed();
+      return snapshot();
+    });
+    queue = operation.catch((err) => { console.error('[paper-trading]', err.message); return snapshot(); });
+    return operation;
+  }
+
   function updateSettings(nextSettings, timestamp = now()) {
     const operation = queue.then(async () => {
       if (!store.isReady()) { const error = new Error('Paper simulator settings are unavailable until durable PostgreSQL storage is ready.'); error.statusCode = 503; throw error; }
@@ -402,5 +445,5 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     return queue;
   }
 
-  return { restore, process, expire, snapshot, activeTrade, activeEntry, updateSettings, setMarketSession };
+  return { restore, process, expire, snapshot, activeTrade, activeEntry, updateSettings, setMarketSession, resetSession };
 }

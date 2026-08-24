@@ -26,6 +26,14 @@ class MemoryPgPool {
       this.settings.set(key, { settings: JSON.parse(settingsText), updated_at: updatedAt });
       return { rows: [] };
     }
+    if (statement === 'DELETE FROM OI_PULSE_PAPER_TRADES') {
+      this.trades.clear();
+      return { rows: [] };
+    }
+    if (statement === 'DELETE FROM OI_PULSE_PAPER_TRADE_SIGNALS') {
+      this.signals.clear();
+      return { rows: [] };
+    }
     if (statement.startsWith('SELECT TRADE ')) {
       return { rows: [...this.trades.values()].sort((a, b) => b.opened_at - a.opened_at).map((row) => ({ trade: row.trade })) };
     }
@@ -67,6 +75,12 @@ restored = await restarted.load();
 assert.equal(restored.trades[0].status, 'closed');
 assert.equal(restored.trades[0].cooldownUntil, 14000);
 assert.deepEqual(restarted.getStatus(), { mode: 'postgres', status: 'ready', lastError: null });
+
+assert.equal(await restarted.clearSessionHistory(), true);
+restored = await restarted.load();
+assert.deepEqual(restored.trades, [], 'daily reset must remove durable paper trade records');
+assert.deepEqual(restored.signalStates, {}, 'daily reset must remove durable signal guards');
+assert.deepEqual(restored.settings, settings, 'daily reset must preserve durable simulator settings');
 
 const disabled = createPaperTradeStore({ logger: { error() {} } });
 assert.equal(await disabled.initialize(), false);
