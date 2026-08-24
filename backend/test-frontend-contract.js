@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(here, '..', 'frontend', 'index.html'), 'utf8');
+const docsHtml = fs.readFileSync(path.join(here, '..', 'docs', 'index.html'), 'utf8');
+const server = fs.readFileSync(path.join(here, 'server.js'), 'utf8');
 const inlineScripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
 assert.ok(inlineScripts.length, 'the dashboard must have an inline JavaScript block');
 assert.doesNotThrow(() => new Function(inlineScripts.at(-1)), 'dashboard inline JavaScript must parse');
@@ -35,5 +37,12 @@ assert.match(html, /touch-action:none/);
 assert.doesNotMatch(html, /class="heartbeat"/);
 assert.doesNotMatch(html, /3-second OI change/);
 assert.match(html, /payload\.status==='connecting'\s*\?\s*'connecting'/);
+assert.match(html, /Reset NIFTY history/);
+assert.match(html, /Reset SENSEX history/);
+assert.match(html, /\/api\/history\//);
+assert.match(html, /Collecting from \$\{baseline\}/);
+assert.match(server, /app\.post\('\/api\/history\/:symbol\/reset'/);
+assert.match(server, /historyStore\.reset\(name\)/);
+assert.equal(docsHtml, html, 'GitHub Pages dashboard copy must stay synchronized with the frontend source');
 
 console.log('frontend connection, aggregate, and chart contracts passed');

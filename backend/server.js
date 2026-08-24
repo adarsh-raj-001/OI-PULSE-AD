@@ -16,11 +16,22 @@ import { appendChartPoint, buildChartPoint } from './chartHistory.js';
 import { DhanLiveFeed } from './dhanLiveFeed.js';
 import { SerializedPollScheduler } from './pollScheduler.js';
 import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
+import { createHistoryStore } from './historyStore.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
 // symbol -> array of { t, underlyingPrice, strikes: { [strike]: {ce, pe} } }
 const history = Object.fromEntries(config.symbols.map((s) => [s.name, []]));
+const historyResetInFlight = new Set();
+
+// Postgres is optional at code level so local/demo development remains simple.
+// In production, configuring OI_HISTORY_DATABASE_URL makes the raw snapshots
+// survive a Render deploy, restart, or temporary Dhan connection failure.
+const historyStore = createHistoryStore({
+  databaseUrl: config.historyDatabaseUrl,
+  historyMaxMs: config.historyMaxMs,
+  persistIntervalMs: config.historyPersistIntervalMs,
+});
 
 // symbol -> compact 10-hour near-ATM chart points. These are separate from
 // raw OI snapshots so history delivery stays fast and bounded.
@@ -132,10 +143,16 @@ function computePayload(name) {
   const hist = history[name];
   if (!hist.length) return null;
   const cur = hist[hist.length - 1];
+  const baseline = hist[0];
   return {
     symbol: name,
     updatedAt: cur.t,
     underlyingPrice: cur.underlyingPrice,
+    history: {
+      baselineAt: baseline.t,
+      collectedMs: Math.max(0, cur.t - baseline.t),
+      source: 'real-market-snapshot',
+    },
     windows: {
       m5: bandDelta(hist, cur.t, 5 * 60 * 1000),
       m30: bandDelta(hist, cur.t, 30 * 60 * 1000),
@@ -175,7 +192,7 @@ function updatePayload(name, point, nextRestState = null) {
   checkThresholds(name, payload.windows);
 }
 
-function recordSnapshot(name, summary, t, { eventDriven = false, restState: nextRestState = null } = {}) {
+function recordSnapshot(name, summary, t, { eventDriven = false, restState: nextRestState = null, persist = true } = {}) {
   const hist = history[name];
   const previous = hist[hist.length - 1] || null;
   const shouldReplace = eventDriven && previous && t - previous.t < config.liveFeedEventBucketMs;
@@ -185,6 +202,11 @@ function recordSnapshot(name, summary, t, { eventDriven = false, restState: next
   else hist.push(snapshot);
   const cutoff = t - config.historyMaxMs;
   while (hist.length && hist[0].t < cutoff) hist.shift();
+
+  // Durable writes are coalesced independently of in-memory event buckets.
+  // This retains restart-safe exact-window references without making every
+  // WebSocket packet a database write.
+  if (persist && !historyResetInFlight.has(name)) void historyStore.save(name, snapshot);
 
   const points = chartHistory[name];
   const replacingChartBucket = eventDriven && points.length > 0 && t - points[points.length - 1].t < config.liveFeedEventBucketMs;
@@ -308,6 +330,39 @@ async function pollSymbol(sym) {
   }
 }
 
+async function resetSymbolHistory(name) {
+  const summary = liveState[name];
+  if (!summary) {
+    const error = new Error(`No real ${name} market snapshot is available yet. Wait for the first Dhan update before resetting history.`);
+    error.statusCode = 409;
+    throw error;
+  }
+  if (historyResetInFlight.has(name)) {
+    const error = new Error(`${name} history reset is already in progress.`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  historyResetInFlight.add(name);
+  try {
+    // First remove durable references, then clear the local series. Any live
+    // packets arriving while deletion is pending are not persisted, so an older
+    // reference cannot reappear after the user establishes a new baseline.
+    await historyStore.reset(name);
+    history[name].length = 0;
+    chartHistory[name].length = 0;
+
+    // The reset baseline is an actual Dhan snapshot already held by this
+    // process. It never manufactures zero OI or zero underlying values.
+    recordSnapshot(name, summary, Date.now(), { restState: restState[name], persist: false });
+    const baseline = history[name][history[name].length - 1];
+    await historyStore.save(name, baseline);
+    return latest[name];
+  } finally {
+    historyResetInFlight.delete(name);
+  }
+}
+
 function pollLoop() {
   // Production logs showed simultaneous NIFTY/SENSEX Option Chain calls
   // receiving 429 responses. Treat the Dhan limit as global for this account:
@@ -339,6 +394,7 @@ app.get('/api/config', (_req, res) => {
       fallbackIntervalMs: config.pollIntervalMs,
       retentionMs: config.chartHistoryMaxMs,
     },
+    historyStorage: historyStore.getStatus(),
     liveFeed: { enabled: config.liveFeedEnabled, ...liveFeedStatus },
     thresholds: config.thresholds,
     notificationsEnabled,
@@ -369,6 +425,19 @@ app.get('/api/chart/:symbol', (req, res) => {
     retentionMs: config.chartHistoryMaxMs,
     points,
   });
+});
+
+// Reset one symbol only. This re-baselines retained application data and never
+// triggers a Dhan request or changes the global serialized poll scheduler.
+app.post('/api/history/:symbol/reset', async (req, res) => {
+  const name = req.params.symbol.toUpperCase();
+  if (!history[name]) return res.status(404).json({ error: 'unknown symbol' });
+  try {
+    const payload = await resetSymbolHistory(name);
+    res.json({ ok: true, symbol: name, payload });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message || 'history reset failed' });
+  }
 });
 
 app.get('/api/vapid-public-key', (_req, res) => {
@@ -424,12 +493,45 @@ if (selfUrl && !selfPingDisabled) {
   setInterval(selfPing, KEEPALIVE_MS);
 }
 
-app.listen(config.port, () => {
-  console.log(`OI Pulse backend listening on :${config.port}`);
-  console.log(`Data source: ${source.label}`);
-  console.log(`Symbols: ${config.symbols.map((s) => s.name).join(', ')}`);
-  console.log(`Push notifications: ${notificationsEnabled ? 'enabled' : 'disabled (set VAPID keys in .env)'}`);
-  console.log(`Dhan live feed: ${config.liveFeedEnabled ? 'enabled (active ATM-band Full Packet stream)' : 'disabled (REST Option Chain only)'}`);
-  console.log(`Self-ping keepalive: ${selfUrl && !selfPingDisabled ? `enabled (${selfUrl})` : 'disabled (set SELF_PING_URL or use Render)'}`);
-  pollLoop();
+async function restoreHistory() {
+  const restored = await historyStore.load(config.symbols.map((sym) => sym.name));
+  for (const [name, snapshots] of Object.entries(restored)) {
+    if (!snapshots.length) continue;
+    history[name].push(...snapshots);
+    // Restored values remain visibly connecting until the new process receives
+    // a current Dhan snapshot. Their window references are valid; their status
+    // deliberately never claims that an old quote is currently live.
+    updatePayload(name, chartHistory[name][chartHistory[name].length - 1]);
+  }
+  const count = Object.values(restored).reduce((total, snapshots) => total + snapshots.length, 0);
+  console.log(`Durable OI history: ${historyStore.getStatus().status} (${count} snapshots restored)`);
+}
+
+async function start() {
+  await historyStore.initialize();
+  await restoreHistory();
+  app.listen(config.port, () => {
+    console.log(`OI Pulse backend listening on :${config.port}`);
+    console.log(`Data source: ${source.label}`);
+    console.log(`Symbols: ${config.symbols.map((s) => s.name).join(', ')}`);
+    console.log(`Push notifications: ${notificationsEnabled ? 'enabled' : 'disabled (set VAPID keys in .env)'}`);
+    console.log(`Dhan live feed: ${config.liveFeedEnabled ? 'enabled (active ATM-band Full Packet stream)' : 'disabled (REST Option Chain only)'}`);
+    console.log(`Durable OI history: ${config.historyDatabaseUrl ? 'Postgres configured' : 'memory only (set OI_HISTORY_DATABASE_URL)'}`);
+    console.log(`Self-ping keepalive: ${selfUrl && !selfPingDisabled ? `enabled (${selfUrl})` : 'disabled (set SELF_PING_URL or use Render)'}`);
+    pollLoop();
+  });
+}
+
+async function shutdown(signal) {
+  console.log(`${signal} received; flushing durable OI history`);
+  await historyStore.close();
+  process.exit(0);
+}
+
+process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.once('SIGINT', () => { void shutdown('SIGINT'); });
+
+start().catch((err) => {
+  console.error('OI Pulse startup failed:', err);
+  process.exit(1);
 });
