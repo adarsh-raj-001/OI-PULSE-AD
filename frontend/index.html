@@ -156,6 +156,11 @@
   .notif-row .t{font-size:13px;} .notif-row .s{font-size:11px; color:var(--text-faint); margin-top:2px;}
   .notif-row button{background:var(--accent); color:#04211F; border:none; border-radius:8px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;}
   .notif-row button.off{background:none; border:1px solid var(--border); color:var(--text-dim);}
+  .history-reset{margin-top:4px; border-top:1px solid var(--border); padding-top:14px;}
+  .history-reset .reset-note{font-size:11px; line-height:1.45; color:var(--text-faint); margin:0 0 10px;}
+  .history-reset .notif-row{margin-bottom:9px;}
+  .history-reset button{background:none; color:var(--warn); border:1px solid rgba(240,185,61,.55);}
+  .history-reset button:disabled{opacity:.5; cursor:wait;}
 </style>
 </head>
 <body>
@@ -214,6 +219,19 @@
       <button id="notifBtn">Enable</button>
     </div>
 
+    <section class="history-reset" aria-label="History reset controls">
+      <h2>OI history baseline</h2>
+      <p class="reset-note">Each reset clears only that market’s saved OI references and starts fresh collection from the latest real Dhan snapshot. The other market is not changed.</p>
+      <div class="notif-row">
+        <div><div class="t">Reset NIFTY history</div><div class="s">Starts NIFTY 5m, 30m, and 3h collection again</div></div>
+        <button class="reset-history" data-reset-symbol="NIFTY">Reset</button>
+      </div>
+      <div class="notif-row">
+        <div><div class="t">Reset SENSEX history</div><div class="s">Starts SENSEX 5m, 30m, and 3h collection again</div></div>
+        <button class="reset-history" data-reset-symbol="SENSEX">Reset</button>
+      </div>
+    </section>
+
     <label for="urlInput">Backend server URL</label>
     <input id="urlInput" placeholder="https://your-oi-backend.onrender.com" />
     <div class="row">
@@ -226,9 +244,9 @@
 <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 const WINDOWS = [
-  { key:'m5',  label:'5 Min' },
-  { key:'m30', label:'30 Min' },
-  { key:'h3',  label:'3 Hour' },
+  { key:'m5',  label:'5 Min', ms:5*60*1000 },
+  { key:'m30', label:'30 Min', ms:30*60*1000 },
+  { key:'h3',  label:'3 Hour', ms:3*60*60*1000 },
 ];
 
 let symbol = 'NIFTY';
@@ -516,6 +534,20 @@ function bandRow(row, isAtm){
     </div>`;
 }
 
+function compactDuration(ms){
+  const seconds=Math.max(0,Math.floor(Number(ms)||0)/1000);
+  if (seconds<60) return `${Math.floor(seconds)}s`;
+  if (seconds<3600) return `${Math.floor(seconds/60)}m`;
+  return `${Math.floor(seconds/3600)}h ${Math.floor((seconds%3600)/60)}m`;
+}
+
+function collectingHistoryCopy(payload, windowSpec){
+  const collected=Math.min(Math.max(0,Number(payload?.history?.collectedMs)||0),windowSpec.ms);
+  const remaining=Math.max(0,windowSpec.ms-collected);
+  const baseline=payload?.history?.source==='real-market-snapshot' ? 'current market baseline' : 'latest market baseline';
+  return `Collecting from ${baseline} · ${compactDuration(collected)} of ${compactDuration(windowSpec.ms)} · ${compactDuration(remaining)} remaining`;
+}
+
 function renderCards(payload){
   const container = $('cards');
   container.innerHTML = '';
@@ -535,7 +567,7 @@ function renderCards(payload){
     if (!win || !win.band?.length){
       card.innerHTML = `
         <div class="card-top">
-          <div><div class="card-label">${w.label} · Near ATM OI</div><div class="card-sub">Not enough history yet</div></div>
+          <div><div class="card-label">${w.label} · Near ATM OI</div><div class="card-sub">${collectingHistoryCopy(payload,w)}</div></div>
         </div>`;
       container.appendChild(card);
       continue;
@@ -780,6 +812,33 @@ $('notifBtn').onclick = async () => {
   const enabled = $('notifBtn').textContent === 'Disable';
   if (enabled) await disableNotifications(); else await enableNotifications();
 };
+
+async function resetHistory(symbolName, button){
+  if (!backendUrl){ alert('Set your backend URL first.'); return; }
+  const accepted=window.confirm(`Reset ${symbolName} OI history? This clears only ${symbolName}'s saved baseline and restarts its 5m, 30m, and 3h collection from the latest real market snapshot.`);
+  if (!accepted) return;
+  const original=button.textContent;
+  button.disabled=true; button.textContent='Resetting…';
+  try{
+    const res=await fetch(backendUrl.replace(/\/$/,'') + '/api/history/' + encodeURIComponent(symbolName) + '/reset',{method:'POST'});
+    const body=await res.json();
+    if (!res.ok || !body?.payload) throw new Error(body?.error || 'Reset failed');
+    latestData={...latestData,[symbolName]:body.payload};
+    if (symbol===symbolName){
+      chartState.points=[]; chartState.loaded=false;
+      renderOverview(); renderCards(body.payload); loadChartHistory(symbolName);
+    }
+    alert(`${symbolName} history reset. Its new baseline uses the latest real market snapshot; exact windows will collect from zero delta.`);
+  }catch(err){
+    alert(err?.message || 'Could not reset history.');
+  }finally{
+    button.disabled=false; button.textContent=original;
+  }
+}
+
+document.querySelectorAll('.reset-history').forEach(button=>{
+  button.addEventListener('click',()=>resetHistory(button.dataset.resetSymbol,button));
+});
 
 // ---- Settings sheet ----
 function openSheet(){ $('urlInput').value = backendUrl; $('sheetBackdrop').classList.add('open'); refreshNotifStatus(); }

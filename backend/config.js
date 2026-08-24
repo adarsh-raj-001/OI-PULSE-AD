@@ -64,6 +64,11 @@ export const config = {
   liveFeedFreshnessMs: Number(tunables.liveFeedFreshnessMs) || 15_000,
   ssePushIntervalMs: tunables.ssePushIntervalMs,
   historyMaxMs: tunables.historyMaxMs,
+  historyPersistIntervalMs: Number(tunables.historyPersistIntervalMs) || 5_000,
+  // Prefer this explicit name so an unrelated DATABASE_URL cannot silently
+  // become the market-history store. DATABASE_URL remains a documented
+  // convenience for Render Blueprint users who intentionally provide it.
+  historyDatabaseUrl: process.env.OI_HISTORY_DATABASE_URL || process.env.DATABASE_URL || null,
   chartHistoryMaxMs: tunables.chartHistoryMaxMs,
   liveFeedEnabled: dataSource === 'dhan' && tunables.liveFeedEnabled === true && process.env.DISABLE_DHAN_LIVE_FEED !== 'true',
   liveFeedEventBucketMs: Number(tunables.liveFeedEventBucketMs) || 1000,

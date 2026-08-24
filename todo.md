@@ -28,10 +28,16 @@
 - [x] Audit the Option Chain REST polling cadence and prove it remains at or above three seconds per symbol.
 - [x] Diagnose live/stale status flapping across the backend stream state and browser display.
 - [x] Correct any request-limit or status-stability defect and validate REST fallback behavior.
-- [ ] Publish the reviewed request-limit and status-stability correction to main through a pull request.
+- [x] Publish the reviewed request-limit and status-stability correction to main through a pull request.
 - [x] Serialize Dhan Option Chain calls globally at no more than one request every three seconds, based on observed 429 responses.
 - [x] Keep a healthy Dhan live WebSocket state distinct from REST reconciliation failures in dashboard status.
 - [x] Add 429 backoff and serialized-polling tests before publishing the correction.
 - [x] Remove redundant on-chart series labels while retaining the colour legend.
 - [x] Improve mobile touch panning and vertical price-scale controls for the chart.
 - [x] Remove the permanent blue loading indicator and excess chart header divider.
+- [x] Investigate why the deployed dashboard reports insufficient 30-minute and 3-hour OI history while a 5-minute window is available.
+- [x] Persist raw OI snapshots across Render restarts and recover exact 5-minute, 30-minute, and 3-hour calculations without inventing missing data.
+- [ ] Validate durable-history recovery and publish the reviewed persistence improvement through a pull request.
+- [x] Seed new and reset OI histories from the latest real Dhan snapshot so delta baselines never begin at zero-valued placeholders.
+- [x] Add separate Reset NIFTY history and Reset SENSEX history controls that independently clear saved references and begin fresh zero-delta collection periods.
+- [x] Validate reset behavior with persisted history and exact 5m/30m/3h availability semantics.

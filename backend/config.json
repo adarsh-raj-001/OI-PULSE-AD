@@ -26,6 +26,8 @@
   "liveFeedFreshnessMs": 15000,
   "ssePushIntervalMs": 500,
   "historyMaxMs": 12960000,
+  "_historyPersistIntervalMs_comment": "When OI_HISTORY_DATABASE_URL is configured, compact raw snapshots are written at this interval for restart-safe 5m/30m/3h recovery. In-memory live calculations still use every event bucket.",
+  "historyPersistIntervalMs": 5000,
   "_chartHistoryMaxMs_comment": "Compact near-ATM chart points retained independently from raw OI snapshots: 10 hours of event-driven Dhan live-feed updates, coalesced into short browser-safe time buckets.",
   "chartHistoryMaxMs": 36000000,
   "_liveFeedEnabled_comment": "When dataSource is dhan, use the authenticated server-side Full Packet WebSocket for active ATM-band price/OI/volume/5-level depth. Option Chain REST remains every 3s for full-chain context and reconciliation.",
