@@ -59,3 +59,7 @@
 - [x] Enforce a configurable per-symbol cooldown after every simulated trade closes before a new qualifying entry may open.
 - [x] Safely close every open simulated trade with a simulator-disabled reason before disabling new paper-trade entries.
 - [x] Validate editable controls, time-based exits, cooldown behavior, persistence, and disable-close sequencing before publication.
+- [x] Present currently open simulated paper positions first as live-position cards and show closed simulated records in a separate history section below.
+- [x] Preserve paper-only status, option-premium lifecycle details, and responsive mobile layout while separating open and closed record views.
+- [x] Add independent chart-pane and series controls so interacting with one metric does not rescale or push unrelated series outside usable bounds.
+- [x] Validate live-position grouping, closed-history ordering, independent chart interaction, mobile layout, and frontend/docs parity before publication.
