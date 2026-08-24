@@ -41,6 +41,7 @@ const paperTradeStore = createPaperTradeStore({ databaseUrl: config.historyDatab
 const paperTrading = createPaperTradeEngine({
   store: paperTradeStore,
   rules: config.paperTrading,
+  contractLotSizes: config.paperTrading.contractLotSizes,
   onChange: () => {
     broadcastPaperTrades();
     refreshLiveSubscriptions();
