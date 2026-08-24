@@ -32,6 +32,11 @@ time-window reference. With durable history configured, the backend restores
 the retained raw references after a restart instead of requiring every window
 to warm up again.
 
+For every displayed strike, **Total** is the arithmetic sum of the displayed
+Call and Put OI deltas. If Dhan omits an OI field for either leg in either
+snapshot, OI Pulse excludes that strike from the comparison rather than
+treating unavailable data as zero and creating a false large delta.
+
 ## Market strength panel
 
 Each available window now includes a **market-strength bar**. It is a compact

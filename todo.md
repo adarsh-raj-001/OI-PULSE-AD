@@ -43,4 +43,7 @@
 - [x] Validate reset behavior with persisted history and exact 5m/30m/3h availability semantics.
 - [x] Change per-symbol reset behavior to immediately use the current real snapshot as the 5m, 30m, and 3h reference so all three deltas display zero without a collection wait.
 - [x] Validate immediate reset-time zero deltas and the transition to subsequent live updates.
-- [ ] Publish the corrected immediate reset semantics through a pull request.
+- [x] Publish the corrected immediate reset semantics through a pull request.
+- [x] Audit the reported Call/Put/Total, baseline, and strike-alignment calculation mismatch shown after the immediate reset-baseline deployment.
+- [x] Correct and validate the missing-OI calculation-integrity defect without changing the global Dhan polling safeguards.
+- [ ] Publish the validated OI calculation-integrity correction through a pull request.
