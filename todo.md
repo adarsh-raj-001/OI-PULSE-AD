@@ -63,3 +63,16 @@
 - [x] Preserve paper-only status, option-premium lifecycle details, and responsive mobile layout while separating open and closed record views.
 - [x] Add independent chart-pane and series controls so interacting with one metric does not rescale or push unrelated series outside usable bounds.
 - [x] Validate live-position grouping, closed-history ordering, independent chart interaction, mobile layout, and frontend/docs parity before publication.
+- [x] Diagnose why the deployed dashboard reports database-not-configured and why the paper-simulator controls are disabled.
+- [x] Verify whether the deployed Render backend is reachable and whether its private PostgreSQL connection setting is configured and healthy.
+- [ ] Improve unavailable-control guidance so the settings sheet clearly explains the required backend/database connection and offers a direct path to restore controls.
+- [x] Validate deployed control availability after the backend and database configuration is corrected.
+- [x] Define aggregate realised, unrealised, and combined paper P&L semantics using option-premium point movement and the configured lot quantity.
+- [x] Ensure new simulated entries use the freshest valid selected-contract option LTP without synthetic or stale fill-price substitution.
+- [x] Add a responsive platform-style paper P&L summary for live positions and completed-trade history while retaining explicit paper-only labelling.
+- [x] Add deterministic coverage for aggregate P&L and fresh-market-price fill selection, and preserve frontend/docs parity.
+- [x] Validate the simulator improvement, then publish it through the GitHub pull-request workflow.
+- [x] Define the existing 10 / 20 simulator setting as a transparent simulated quantity for monetary paper P&L calculations.
+- [x] Replace aggregate and per-trade lot-point P&L displays with paper rupee P&L calculated as premium movement × simulated quantity.
+- [x] Validate monetary paper P&L calculations, fresh-LTP fill behavior, responsive display, and frontend/docs parity.
+- [x] Amend the enhancement commit and open the review pull request once GitHub branch-push authorization is available.
