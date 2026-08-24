@@ -41,7 +41,10 @@ const paperTradeStore = createPaperTradeStore({ databaseUrl: config.historyDatab
 const paperTrading = createPaperTradeEngine({
   store: paperTradeStore,
   rules: config.paperTrading,
-  onChange: () => broadcastPaperTrades(),
+  onChange: () => {
+    broadcastPaperTrades();
+    refreshLiveSubscriptions();
+  },
 });
 
 // symbol -> compact 10-hour near-ATM chart points. These are separate from
@@ -360,6 +363,19 @@ app.get('/api/paper-trades', (_req, res) => {
   res.json(paperTrading.snapshot());
 });
 
+// Screen-only controls update the durable paper simulator. Disabling always
+// closes simulated positions first; this endpoint never contacts Dhan REST or
+// a broker/order API.
+app.post('/api/paper-trading/settings', async (req, res) => {
+  try {
+    const state = await paperTrading.updateSettings(req.body || {}, Date.now());
+    refreshLiveSubscriptions();
+    res.json(state);
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ error: err.message || 'Could not update paper simulator settings.' });
+  }
+});
+
 // Full retained history is requested once after connection or a symbol change.
 // SSE subsequently sends only the latest compact point rather than re-sending
 // up to ten hours of chart data every push interval.
@@ -429,6 +445,10 @@ function broadcastPaperTrades() {
   for (const client of sseClients) client.write(`event: paper-trades\ndata: ${payload}\n\n`);
 }
 setInterval(broadcast, config.ssePushIntervalMs);
+// Time-based paper exits are local deterministic checks. They neither fetch a
+// Dhan Option Chain nor place any broker order; a closed trade uses its last
+// observed option premium if no newer quote arrived at the exact deadline.
+const paperExpiryTimer = setInterval(() => { void paperTrading.expire(Date.now()); }, 250);
 
 // ---- Keep-alive self-ping (Render's free tier spins a service down after
 // ~15 min with no inbound HTTP traffic). While the process is already
@@ -490,6 +510,7 @@ async function start() {
 
 async function shutdown(signal) {
   console.log(`${signal} received; flushing durable OI history`);
+  clearInterval(paperExpiryTimer);
   await historyStore.close();
   await paperTradeStore.close();
   process.exit(0);

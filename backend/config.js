@@ -77,8 +77,11 @@ export const config = {
   paperTrading: {
     enabled: tunables.paperTrading?.enabled === true,
     lots: Number(tunables.paperTrading?.lots) || 10,
+    triggerLevel: tunables.paperTrading?.triggerLevel === 'mild' ? 'mild' : 'strong',
     targetPoints: Number(tunables.paperTrading?.targetPoints) || 2,
     stopLossPoints: Number(tunables.paperTrading?.stopLossPoints) || 5,
+    maxAliveSeconds: Math.max(0, Number(tunables.paperTrading?.maxAliveSeconds) || 0),
+    cooldownSeconds: Math.max(0, Number(tunables.paperTrading?.cooldownSeconds) || 0),
   },
 };
 
