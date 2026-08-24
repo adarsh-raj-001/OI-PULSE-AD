@@ -221,13 +221,13 @@
 
     <section class="history-reset" aria-label="History reset controls">
       <h2>OI history baseline</h2>
-      <p class="reset-note">Each reset clears only that market’s saved OI references and starts fresh collection from the latest real Dhan snapshot. The other market is not changed.</p>
+      <p class="reset-note">Each reset clears only that market’s saved OI references, then immediately sets all three delta baselines to the latest real Dhan snapshot. The other market is not changed.</p>
       <div class="notif-row">
-        <div><div class="t">Reset NIFTY history</div><div class="s">Starts NIFTY 5m, 30m, and 3h collection again</div></div>
+        <div><div class="t">Reset NIFTY history</div><div class="s">Shows NIFTY 5m, 30m, and 3h deltas at zero immediately</div></div>
         <button class="reset-history" data-reset-symbol="NIFTY">Reset</button>
       </div>
       <div class="notif-row">
-        <div><div class="t">Reset SENSEX history</div><div class="s">Starts SENSEX 5m, 30m, and 3h collection again</div></div>
+        <div><div class="t">Reset SENSEX history</div><div class="s">Shows SENSEX 5m, 30m, and 3h deltas at zero immediately</div></div>
         <button class="reset-history" data-reset-symbol="SENSEX">Reset</button>
       </div>
     </section>
@@ -439,7 +439,8 @@ $('chartToolbar').addEventListener('click',(event)=>{
 });
 
 function strengthPanel(windows){
-  const preferred = WINDOWS.map(w => ({ key:w.key, label:w.label, win:windows?.[w.key] })).find(entry => entry.win?.marketStrength);
+  const candidates = WINDOWS.map(w => ({ key:w.key, label:w.label, win:windows?.[w.key] })).filter(entry => entry.win?.marketStrength);
+  const preferred = candidates.find(entry => entry.win.referenceMode==='exact-window') || candidates[0];
   if (!preferred) {
     return `<section class="strength-card"><div class="strength-head"><div><div class="strength-title">Market strength</div><div class="strength-sub">Awaiting Dhan premium and top bid/ask aggregates</div></div><span class="strength-state neutral">Data warming</span></div><div class="strength-summary">The direction bar appears after an exact OI window and complete live option quotes are available.</div></section>`;
   }
@@ -454,7 +455,7 @@ function strengthPanel(windows){
   return `
     <section class="strength-card" aria-label="Market strength based on ${preferred.label} data">
       <div class="strength-head">
-        <div><div class="strength-title">Market strength · ${preferred.label}</div><div class="strength-sub">Exact ${fmtAgo(preferred.win.actualSpanMs)} snapshot window · confidence ${fmtPct(ms.confidence)}</div></div>
+        <div><div class="strength-title">Market strength · ${preferred.label}</div><div class="strength-sub">${preferred.win.referenceMode==='current-market-baseline' ? `Current market baseline · ${compactDuration(preferred.win.actualSpanMs)} since baseline` : `Exact ${fmtAgo(preferred.win.actualSpanMs)} snapshot window`} · confidence ${fmtPct(ms.confidence)}</div></div>
         <span class="strength-state ${direction}">${ms.label || 'Limited data'}</span>
       </div>
       <div class="strength-gauge" role="meter" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="${score===null?'':score}" aria-label="Directional intensity">
@@ -543,9 +544,8 @@ function compactDuration(ms){
 
 function collectingHistoryCopy(payload, windowSpec){
   const collected=Math.min(Math.max(0,Number(payload?.history?.collectedMs)||0),windowSpec.ms);
-  const remaining=Math.max(0,windowSpec.ms-collected);
   const baseline=payload?.history?.source==='real-market-snapshot' ? 'current market baseline' : 'latest market baseline';
-  return `Collecting from ${baseline} · ${compactDuration(collected)} of ${compactDuration(windowSpec.ms)} · ${compactDuration(remaining)} remaining`;
+  return `Awaiting the first ${baseline} · no delta is shown until a real snapshot arrives`;
 }
 
 function renderCards(payload){
@@ -585,7 +585,7 @@ function renderCards(payload){
       <div class="card-top">
         <div>
           <div class="card-label">${w.label} · Near ATM OI</div>
-          <div class="card-sub">${fmtAgo(win.actualSpanMs)} · strike step ${stepLabel}</div>
+          <div class="card-sub">${win.referenceMode==='current-market-baseline' ? `Current market baseline · ${compactDuration(win.actualSpanMs)} since reset/start` : `${fmtAgo(win.actualSpanMs)} · strike step ${stepLabel}`}</div>
         </div>
       </div>
       ${atmRow ? bandRow(atmRow, true) : ''}
@@ -815,7 +815,7 @@ $('notifBtn').onclick = async () => {
 
 async function resetHistory(symbolName, button){
   if (!backendUrl){ alert('Set your backend URL first.'); return; }
-  const accepted=window.confirm(`Reset ${symbolName} OI history? This clears only ${symbolName}'s saved baseline and restarts its 5m, 30m, and 3h collection from the latest real market snapshot.`);
+  const accepted=window.confirm(`Reset ${symbolName} OI history? This clears only ${symbolName}'s saved references and sets its 5m, 30m, and 3h baselines to the latest real market snapshot, so all three deltas show zero immediately.`);
   if (!accepted) return;
   const original=button.textContent;
   button.disabled=true; button.textContent='Resetting…';
@@ -828,7 +828,7 @@ async function resetHistory(symbolName, button){
       chartState.points=[]; chartState.loaded=false;
       renderOverview(); renderCards(body.payload); loadChartHistory(symbolName);
     }
-    alert(`${symbolName} history reset. Its new baseline uses the latest real market snapshot; exact windows will collect from zero delta.`);
+    alert(`${symbolName} history reset. Its 5m, 30m, and 3h baselines now equal the latest real market snapshot, so all three deltas are zero immediately.`);
   }catch(err){
     alert(err?.message || 'Could not reset history.');
   }finally{
