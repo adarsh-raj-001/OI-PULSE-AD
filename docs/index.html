@@ -33,7 +33,7 @@
   .status{display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.06em; color:var(--text-dim); text-transform:uppercase;}
   .dot{width:7px; height:7px; border-radius:50%; background:var(--text-faint); flex-shrink:0;}
   .dot.live{background:var(--rise); animation:pulse 1.6s infinite;}
-  .dot.stale{background:var(--warn);} .dot.error{background:var(--fall);}
+  .dot.stale,.dot.paused{background:var(--warn);} .dot.error{background:var(--fall);}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55);} 70%{box-shadow:0 0 0 8px rgba(52,211,153,0);} 100%{box-shadow:0 0 0 0 rgba(52,211,153,0);}}
   .gear{background:none; border:none; color:var(--text-dim); font-size:17px; padding:6px; cursor:pointer;}
   .view-nav{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:2px 18px 0; padding:4px; background:var(--surface); border:1px solid var(--border); border-radius:11px;}
@@ -173,7 +173,7 @@
   .history-reset .notif-row{margin-bottom:9px;}
   .history-reset button{background:none; color:var(--warn); border:1px solid rgba(240,185,61,.55);}
   .history-reset button:disabled{opacity:.5; cursor:wait;}
-  .paper-settings{margin:4px 0 16px; border-top:1px solid var(--border); padding-top:14px;}.paper-settings h2{margin-bottom:5px;}.paper-settings-note{font-size:11px; line-height:1.45; color:var(--text-faint); margin:0 0 11px;}.paper-control-grid{display:grid; grid-template-columns:1fr 1fr; gap:0 10px;}.paper-control-grid .full{grid-column:1/-1;}.paper-settings-status{font-family:'IBM Plex Mono',monospace; font-size:10px; line-height:1.45; color:var(--text-faint); padding:10px 11px; border:1px solid var(--border); border-radius:9px; background:var(--surface); margin:-2px 0 11px;}.paper-switch-row{display:flex; justify-content:space-between; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-bottom:12px;}.paper-switch-title{font-size:13px; color:var(--text);}.paper-switch-note{font-size:10.5px; line-height:1.4; color:var(--text-faint); margin-top:3px;}.paper-switch{position:relative; display:inline-flex; flex:0 0 auto; cursor:pointer;}.paper-switch input{position:absolute; opacity:0; width:1px; height:1px; margin:0;}.paper-switch-track{width:43px; height:24px; border-radius:20px; background:#303847; border:1px solid var(--border); transition:.15s;}.paper-switch-track::after{content:''; display:block; width:18px; height:18px; margin:2px; border-radius:50%; background:var(--text-dim); transition:.15s;}.paper-switch input:checked + .paper-switch-track{background:rgba(52,211,153,.28); border-color:rgba(52,211,153,.55);}.paper-switch input:checked + .paper-switch-track::after{transform:translateX(18px); background:var(--rise);}.paper-switch input:disabled + .paper-switch-track{opacity:.45; cursor:not-allowed;}.paper-settings button:disabled{opacity:.5; cursor:not-allowed;}@media (max-width:390px){.paper-control-grid{grid-template-columns:1fr;}.paper-control-grid .full{grid-column:auto;}}
+  .paper-settings{margin:4px 0 16px; border-top:1px solid var(--border); padding-top:14px;}.paper-settings h2{margin-bottom:5px;}.paper-settings-note{font-size:11px; line-height:1.45; color:var(--text-faint); margin:0 0 11px;}.paper-control-grid{display:grid; grid-template-columns:1fr 1fr; gap:0 10px;}.paper-control-grid .full{grid-column:1/-1;}.paper-settings-status{font-family:'IBM Plex Mono',monospace; font-size:10px; line-height:1.45; color:var(--text-faint); padding:10px 11px; border:1px solid var(--border); border-radius:9px; background:var(--surface); margin:-2px 0 11px;}.paper-switch-row{display:flex; justify-content:space-between; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-bottom:12px;}.paper-switch-title{font-size:13px; color:var(--text);}.paper-switch-note{font-size:10.5px; line-height:1.4; color:var(--text-faint); margin-top:3px;}.paper-switch{position:relative; display:inline-flex; flex:0 0 auto; cursor:pointer;}.paper-switch input{position:absolute; opacity:0; width:1px; height:1px; margin:0;}.paper-switch-track{width:43px; height:24px; border-radius:20px; background:#303847; border:1px solid var(--border); transition:.15s;}.paper-switch-track::after{content:''; display:block; width:18px; height:18px; margin:2px; border-radius:50%; background:var(--text-dim); transition:.15s;}.paper-switch input:checked + .paper-switch-track{background:rgba(52,211,153,.28); border-color:rgba(52,211,153,.55);}.paper-switch input:checked + .paper-switch-track::after{transform:translateX(18px); background:var(--rise);}.paper-switch input:disabled + .paper-switch-track{opacity:.45; cursor:not-allowed;}.paper-settings button:disabled{opacity:.5; cursor:not-allowed;}.paper-badge.pending{color:var(--warn); background:rgba(240,185,61,.12);}@media (max-width:390px){.paper-control-grid{grid-template-columns:1fr;}.paper-control-grid .full{grid-column:auto;}}
 </style>
 </head>
 <body data-view="live">
@@ -242,10 +242,14 @@
 
     <section class="paper-settings" aria-label="Paper simulator controls">
       <h2>Paper simulator controls</h2>
-      <p class="paper-settings-note">Paper-only settings apply to future simulated entries. Target, stop, lifetime, and cooldown are recorded at entry, so changing these controls never rewrites an open or closed record. Turning the simulator off closes every open paper trade first at its last observed option premium.</p>
+      <p class="paper-settings-note">Paper-only settings apply to future simulated entries. Automatic market hours pause new Dhan collection and new simulated entries outside weekdays 09:15–15:30 India time when enabled. Target, stop, lifetime, cooldown, and premium offset are recorded at entry, so changing controls never rewrites an open or closed record.</p>
       <div class="paper-switch-row">
         <div><div class="paper-switch-title">Paper trading</div><div class="paper-switch-note" id="paperEnabledNote">Loading simulator status…</div></div>
         <label class="paper-switch" aria-label="Enable paper trading"><input id="paperEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
+      </div>
+      <div class="paper-switch-row">
+        <div><div class="paper-switch-title">Automatic market hours</div><div class="paper-switch-note">Pauses Dhan collection and new paper entries outside weekdays 09:15–15:30 India time. Turn off only for a deliberate manual override or exceptional session.</div></div>
+        <label class="paper-switch" aria-label="Enable automatic market hours"><input id="paperMarketHoursEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
       </div>
       <div class="paper-switch-row">
         <div><div class="paper-switch-title">Trade NIFTY paper signals</div><div class="paper-switch-note">Disabling NIFTY blocks new NIFTY simulations and closes any open NIFTY paper position at its last observed option premium.</div></div>
@@ -256,8 +260,9 @@
         <label class="paper-switch" aria-label="Enable SENSEX paper trading"><input id="paperSensexEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
       </div>
       <div class="paper-control-grid" id="paperControlFields">
-        <div><label for="paperLots">Lots per simulation</label><select id="paperLots"><option value="10">10 lots</option><option value="20">20 lots</option></select></div>
-        <div><label for="paperTrigger">Trigger point</label><select id="paperTrigger"><option value="strong">Strong pressure</option><option value="mild">Mild or strong</option></select></div>
+        <div><label for="paperLots">Lots per simulation</label><input id="paperLots" type="number" inputmode="numeric" min="1" max="100000" step="1" /></div>
+        <div><label for="paperStrengthThreshold">Strength threshold · 1–100</label><input id="paperStrengthThreshold" type="number" inputmode="numeric" min="1" max="100" step="1" /></div>
+        <div><label for="paperEntryOffset">Entry premium offset · ₹</label><input id="paperEntryOffset" type="number" inputmode="decimal" min="-10000" max="10000" step="0.05" /></div>
         <div><label for="paperTarget">Target · premium points</label><input id="paperTarget" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
         <div><label for="paperStop">Stop-loss · premium points</label><input id="paperStop" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
         <div><label for="paperAlive">Maximum alive time · seconds</label><input id="paperAlive" type="number" inputmode="numeric" min="0" max="86400" step="1" /></div>
@@ -305,7 +310,7 @@ let demoTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let latestData = {};
-let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ enabled:false, lots:10, symbolEnabled:{NIFTY:true,SENSEX:true}, triggerLevel:'strong', targetPoints:2, stopLossPoints:5, maxAliveSeconds:0, cooldownSeconds:0 }, contractLotSizes:{NIFTY:65,SENSEX:20}, trades:[] };
+let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ enabled:false, lots:10, symbolEnabled:{NIFTY:true,SENSEX:true}, marketHoursEnabled:true, strengthThreshold:60, entryPremiumOffset:0, targetPoints:2, stopLossPoints:5, maxAliveSeconds:0, cooldownSeconds:0 }, marketSession:{enabled:true,active:true,opensAt:'09:15',closesAt:'15:30',timeZone:'Asia/Kolkata'}, contractLotSizes:{NIFTY:65,SENSEX:20}, trades:[] };
 let currentView = 'live';
 let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
 const chartState = {
@@ -588,12 +593,15 @@ function renderOverview(){
 }
 
 function paperResult(trade){
+  if (trade.status==='pending') return `Pending paper ${trade.entryCondition==='at-or-below'?'limit':'stop'} entry at ${fmtPrice(trade.requestedEntryPrice)} · latest premium ${fmtPrice(trade.lastPrice)}`;
   if (trade.status==='open') return `Current premium ${fmtPrice(trade.lastPrice)} · unrealized ${fmtSignedPoints(Number(trade.lastPrice)-Number(trade.entryPrice))} points`;
+  if (trade.closeReason==='limit-not-reached') return `Pending paper entry cancelled because the requested premium was not reached before its time limit`;
   const close = trade.closeReason==='target' ? 'Target reached' : trade.closeReason==='stop-loss' ? 'Stop-loss reached' : trade.closeReason==='time-expired' ? 'Maximum alive time reached' : trade.closeReason==='simulator-disabled' ? 'Closed when simulator was disabled' : trade.closeReason==='symbol-disabled' ? `Closed when ${trade.symbol} paper trading was disabled` : 'Closed';
   return `${close} at ${fmtPrice(trade.exitPrice)} · ${fmtSignedPoints(trade.resultPoints)} premium points`;
 }
 
 function paperTradePnl(trade){
+  if (trade?.status==='pending') return {points:null,money:null,contractLotSize:finite(trade?.contractLotSize)};
   const entry=finite(trade?.entryPrice), lots=finite(trade?.lots);
   const contractLotSize=finite(trade?.contractLotSize) ?? finite(paperTradeState?.contractLotSizes?.[trade?.symbol]);
   const mark=trade?.status==='open' ? finite(trade?.lastPrice) : finite(trade?.exitPrice);
@@ -602,8 +610,8 @@ function paperTradePnl(trade){
 }
 
 function localPaperPerformance(trades){
-  const totals={totalTrades:trades.length,openTrades:0,closedTrades:0,winningClosedTrades:0,losingClosedTrades:0,realisedPoints:0,unrealisedPoints:0,netPoints:0,realisedMoney:0,unrealisedMoney:0,netMoney:0};
-  trades.forEach(trade=>{const pnl=paperTradePnl(trade); const open=trade.status==='open'; if(open) totals.openTrades++; else totals.closedTrades++; if(pnl.points===null||pnl.money===null) return; if(open){totals.unrealisedPoints+=pnl.points;totals.unrealisedMoney+=pnl.money;}else{totals.realisedPoints+=pnl.points;totals.realisedMoney+=pnl.money;if(pnl.points>0)totals.winningClosedTrades++;if(pnl.points<0)totals.losingClosedTrades++;}});
+  const totals={totalTrades:trades.length,pendingEntries:0,openTrades:0,closedTrades:0,winningClosedTrades:0,losingClosedTrades:0,realisedPoints:0,unrealisedPoints:0,netPoints:0,realisedMoney:0,unrealisedMoney:0,netMoney:0};
+  trades.forEach(trade=>{if(trade.status==='pending'){totals.pendingEntries++;return;}const pnl=paperTradePnl(trade); const open=trade.status==='open'; if(open) totals.openTrades++; else totals.closedTrades++; if(pnl.points===null||pnl.money===null) return; if(open){totals.unrealisedPoints+=pnl.points;totals.unrealisedMoney+=pnl.money;}else{totals.realisedPoints+=pnl.points;totals.realisedMoney+=pnl.money;if(pnl.points>0)totals.winningClosedTrades++;if(pnl.points<0)totals.losingClosedTrades++;}});
   totals.netPoints=totals.realisedPoints+totals.unrealisedPoints; totals.netMoney=totals.realisedMoney+totals.unrealisedMoney; return totals;
 }
 
@@ -611,17 +619,18 @@ function fmtSignedMoney(value){ const v=finite(value); return v===null?'—':`${
 
 function paperTradeCard(trade, livePosition=false){
   const isOpen=trade.status==='open';
+  const isPending=trade.status==='pending';
   const pnl=paperTradePnl(trade);
   const unrealized=pnl.points;
   const pnlClass=pnl.money>0?'rise':pnl.money<0?'fall':'';
-  const fillLabel=trade.entryPriceSource==='live-option-ltp'?'Live option LTP':'Recorded option LTP';
-  const fillTime=trade.entryPriceObservedAt?fmtStamp(trade.entryPriceObservedAt):'time not retained';
-  const liveDetails=livePosition ? `<div class="paper-live-grid"><div class="paper-live-kpi"><div class="k">Current premium</div><div class="v">${fmtPrice(trade.lastPrice)}</div></div><div class="paper-live-kpi"><div class="k">Unrealized P&L</div><div class="v ${pnlClass}">${fmtSignedMoney(pnl.money)}</div></div><div class="paper-live-kpi"><div class="k">Time status</div><div class="v">${trade.expiresAt?`Until ${fmtStamp(trade.expiresAt)}`:'No time exit'}</div></div><div class="paper-live-kpi"><div class="k">Opened</div><div class="v">${fmtStamp(trade.openedAt)}</div></div></div>` : '';
+  const fillLabel=isPending?'Awaiting fresh live option LTP':trade.entryPriceSource==='live-option-ltp'?'Live option LTP':'Recorded option LTP';
+  const fillTime=isPending?(trade.marketPriceObservedAt?fmtStamp(trade.marketPriceObservedAt):'quote time not retained'):(trade.entryPriceObservedAt?fmtStamp(trade.entryPriceObservedAt):'time not retained');
+  const liveDetails=livePosition ? (isPending ? `<div class="paper-live-grid"><div class="paper-live-kpi"><div class="k">Current premium</div><div class="v">${fmtPrice(trade.lastPrice)}</div></div><div class="paper-live-kpi"><div class="k">Requested level</div><div class="v">${fmtPrice(trade.requestedEntryPrice)}</div></div><div class="paper-live-kpi"><div class="k">Time status</div><div class="v">${trade.expiresAt?`Until ${fmtStamp(trade.expiresAt)}`:'No time limit'}</div></div><div class="paper-live-kpi"><div class="k">Requested</div><div class="v">${fmtStamp(trade.requestedAt)}</div></div></div>` : `<div class="paper-live-grid"><div class="paper-live-kpi"><div class="k">Current premium</div><div class="v">${fmtPrice(trade.lastPrice)}</div></div><div class="paper-live-kpi"><div class="k">Unrealized P&L</div><div class="v ${pnlClass}">${fmtSignedMoney(pnl.money)}</div></div><div class="paper-live-kpi"><div class="k">Time status</div><div class="v">${trade.expiresAt?`Until ${fmtStamp(trade.expiresAt)}`:'No time exit'}</div></div><div class="paper-live-kpi"><div class="k">Opened</div><div class="v">${fmtStamp(trade.openedAt)}</div></div></div>`) : '';
   return `<article class="paper-record ${livePosition?'paper-live-position':''}">
-    <div class="paper-record-top"><div><div class="paper-record-title">Simulated Buy ${trade.optionType==='CALL'?'Call':'Put'} · ${trade.symbol}</div><div class="paper-record-sub">${trade.strike} strike · ${trade.lots} lots × ${pnl.contractLotSize??'—'} units/lot · ${trade.signalWindow||'—'} trigger</div></div><span class="paper-badge ${isOpen?'open':'closed'}">${isOpen?'Open':'Closed'}</span></div>
-    <div class="paper-stats"><div class="paper-stat"><div class="paper-stat-label">Entry LTP</div><div class="paper-stat-value">${fmtPrice(trade.entryPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Target</div><div class="paper-stat-value rise">${fmtPrice(trade.targetPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Stop loss</div><div class="paper-stat-value fall">${fmtPrice(trade.stopLossPrice)}</div></div></div>
-    <div class="paper-fill-note"><strong>${fillLabel}</strong> at ${fillTime}</div>${liveDetails}<div class="paper-result ${pnlClass}">${paperResult(trade)}</div><div class="paper-pnl-inline ${pnlClass}">${isOpen?'Open paper P&L':'Realised paper P&L'}: ${fmtSignedMoney(pnl.money)}</div>
-    <div class="paper-record-sub">Opened ${fmtStamp(trade.openedAt)}${trade.expiresAt?` · Auto-close ${fmtStamp(trade.expiresAt)}`:' · No time exit'}${trade.closedAt?` · Closed ${fmtStamp(trade.closedAt)}`:''}</div>
+    <div class="paper-record-top"><div><div class="paper-record-title">Simulated Buy ${trade.optionType==='CALL'?'Call':'Put'} · ${trade.symbol}</div><div class="paper-record-sub">${trade.strike} strike · ${trade.lots} lots × ${pnl.contractLotSize??'—'} units/lot · ${trade.signalWindow||'—'} trigger</div></div><span class="paper-badge ${isPending?'pending':isOpen?'open':'closed'}">${isPending?'Pending':isOpen?'Open':'Closed'}</span></div>
+    <div class="paper-stats"><div class="paper-stat"><div class="paper-stat-label">${isPending?'Requested entry':'Entry LTP'}</div><div class="paper-stat-value">${fmtPrice(isPending?trade.requestedEntryPrice:trade.entryPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Target</div><div class="paper-stat-value rise">${fmtPrice(trade.targetPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Stop loss</div><div class="paper-stat-value fall">${fmtPrice(trade.stopLossPrice)}</div></div></div>
+    <div class="paper-fill-note"><strong>${fillLabel}</strong> at ${fillTime}</div>${liveDetails}<div class="paper-result ${pnlClass}">${paperResult(trade)}</div>${isPending?'':`<div class="paper-pnl-inline ${pnlClass}">${isOpen?'Open paper P&L':'Realised paper P&L'}: ${fmtSignedMoney(pnl.money)}</div>`}
+    <div class="paper-record-sub">${isPending?`Requested ${fmtStamp(trade.requestedAt)}`:`Opened ${fmtStamp(trade.openedAt)}`}${trade.expiresAt?` · Auto-cancel/close ${fmtStamp(trade.expiresAt)}`:' · No time exit'}${trade.closedAt?` · Closed ${fmtStamp(trade.closedAt)}`:''}</div>
   </article>`;
 }
 
@@ -635,11 +644,12 @@ function renderPaperTrades(){
   const durable=paperTradeState?.enabled===true && storage.mode==='postgres' && storage.status==='ready';
   const status=durable ? 'Durable records active' : paperTradeState?.enabled ? 'Storage reconnecting' : 'Simulator unavailable';
   const storageNote=durable ? 'PostgreSQL' : storage.mode==='disabled' ? 'Database not configured' : 'Unavailable';
+  const pending=trades.filter(trade=>trade.status==='pending').sort((a,b)=>Number(b.requestedAt||0)-Number(a.requestedAt||0));
   const opened=trades.filter(trade=>trade.status==='open').sort((a,b)=>Number(b.openedAt||0)-Number(a.openedAt||0));
-  const closed=trades.filter(trade=>trade.status!=='open').sort((a,b)=>Number(b.closedAt||b.openedAt||0)-Number(a.closedAt||a.openedAt||0));
-  const positions=opened.length ? opened.map(trade=>paperTradeCard(trade,true)).join('') : `<div class="paper-empty">No live simulated position. A new paper position appears here only after a completed qualifying window and a valid ATM option premium are available.</div>`;
+  const closed=trades.filter(trade=>trade.status!=='open'&&trade.status!=='pending').sort((a,b)=>Number(b.closedAt||b.openedAt||b.requestedAt||0)-Number(a.closedAt||a.openedAt||a.requestedAt||0));
+  const positions=[...pending,...opened].length ? [...pending,...opened].map(trade=>paperTradeCard(trade,true)).join('') : `<div class="paper-empty">No live or pending simulated entry. A new paper entry appears here only after a completed qualifying window and a valid ATM option premium are available.</div>`;
   const history=closed.length ? closed.map(trade=>paperTradeCard(trade,false)).join('') : `<div class="paper-empty">No closed simulated trades yet. Completed, stopped, timed-out, and simulator-disabled records will appear here in most-recent-first order.</div>`;
-  const triggerText=rules.triggerLevel==='mild'?'Mild or strong':'Strong only';
+  const triggerText=`≥${rules.strengthThreshold??60}/100`;
   const netClass=performance.netMoney>0?'rise':performance.netMoney<0?'fall':'';
   const realisedClass=performance.realisedMoney>0?'rise':performance.realisedMoney<0?'fall':'';
   const openClass=performance.unrealisedMoney>0?'rise':performance.unrealisedMoney<0?'fall':'';
@@ -651,18 +661,22 @@ function renderPaperControls(){
   const storage=paperTradeState?.storage||{};
   const editable=storage.mode==='postgres' && storage.status==='ready';
   $('paperEnabled').checked=rules.enabled===true;
+  $('paperMarketHoursEnabled').checked=rules.marketHoursEnabled!==false;
   $('paperNiftyEnabled').checked=rules.symbolEnabled?.NIFTY!==false;
   $('paperSensexEnabled').checked=rules.symbolEnabled?.SENSEX!==false;
-  $('paperLots').value=String(rules.lots===20?20:10);
-  $('paperTrigger').value=rules.triggerLevel==='mild'?'mild':'strong';
+  $('paperLots').value=String(rules.lots??10);
+  $('paperStrengthThreshold').value=String(rules.strengthThreshold??60);
+  $('paperEntryOffset').value=String(rules.entryPremiumOffset??0);
   $('paperTarget').value=String(rules.targetPoints??2);
   $('paperStop').value=String(rules.stopLossPoints??5);
   $('paperAlive').value=String(rules.maxAliveSeconds??0);
   $('paperCooldown').value=String(rules.cooldownSeconds??0);
-  document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperEnabled, #paperNiftyEnabled, #paperSensexEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
+  document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperEnabled, #paperMarketHoursEnabled, #paperNiftyEnabled, #paperSensexEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
   const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open').length;
   $('paperEnabledNote').textContent=!editable?'Durable PostgreSQL storage is required for controls.':rules.enabled?'Enabled · qualifying signals may create simulated records.':'Disabled · new simulated entries are blocked.';
-  $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${openCount} simulated trade${openCount===1?'':'s'} open. NIFTY is ${rules.symbolEnabled?.NIFTY!==false?'enabled':'disabled'}; SENSEX is ${rules.symbolEnabled?.SENSEX!==false?'enabled':'disabled'}. Disabling one symbol closes only that symbol’s open paper position.`;
+  const session=paperTradeState?.marketSession||{};
+  const sessionText=rules.marketHoursEnabled===false?'Automatic market-hours pause overridden manually.':session.active===false?`Market session paused (${session.reason||'off hours'}); Dhan collection and new paper entries resume at ${session.opensAt||'09:15'} ${session.timeZone||'Asia/Kolkata'}.`:`Market session active until ${session.closesAt||'15:30'} ${session.timeZone||'Asia/Kolkata'}.`;
+  $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${sessionText} ${openCount} simulated trade${openCount===1?'':'s'} open. NIFTY is ${rules.symbolEnabled?.NIFTY!==false?'enabled':'disabled'}; SENSEX is ${rules.symbolEnabled?.SENSEX!==false?'enabled':'disabled'}.`;
 }
 
 function setView(view){
@@ -793,7 +807,7 @@ function update(data){
   const payload = data[symbol];
   renderCards(payload);
   if (payload?.chart?.point) ingestChartPoint(payload.chart.point, symbol, payload.chart);
-  if (payload?.status) setStatus(payload.status==='live' ? 'live' : payload.status==='stale' ? 'stale' : payload.status==='connecting' ? 'connecting' : 'error');
+  if (payload?.status) setStatus(payload.status==='live' ? 'live' : payload.status==='stale' ? 'stale' : payload.status==='paused' ? 'paused' : payload.status==='connecting' ? 'connecting' : 'error');
 }
 
 function updatePaperTrades(data){
@@ -1036,7 +1050,9 @@ async function savePaperControls({switchChanged=false}={}){
     enabled:$('paperEnabled').checked,
     lots:Number($('paperLots').value),
     symbolEnabled:{NIFTY:$('paperNiftyEnabled').checked,SENSEX:$('paperSensexEnabled').checked},
-    triggerLevel:$('paperTrigger').value,
+    marketHoursEnabled:$('paperMarketHoursEnabled').checked,
+    strengthThreshold:Number($('paperStrengthThreshold').value),
+    entryPremiumOffset:Number($('paperEntryOffset').value),
     targetPoints:Number($('paperTarget').value),
     stopLossPoints:Number($('paperStop').value),
     maxAliveSeconds:Number($('paperAlive').value),
@@ -1073,6 +1089,7 @@ async function savePaperControls({switchChanged=false}={}){
 }
 $('paperSaveBtn').onclick=()=>savePaperControls();
 $('paperEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
+$('paperMarketHoursEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 $('paperNiftyEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 $('paperSensexEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 
