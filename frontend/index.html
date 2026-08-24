@@ -36,6 +36,17 @@
   .dot.stale{background:var(--warn);} .dot.error{background:var(--fall);}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55);} 70%{box-shadow:0 0 0 8px rgba(52,211,153,0);} 100%{box-shadow:0 0 0 0 rgba(52,211,153,0);}}
   .gear{background:none; border:none; color:var(--text-dim); font-size:17px; padding:6px; cursor:pointer;}
+  .view-nav{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:2px 18px 0; padding:4px; background:var(--surface); border:1px solid var(--border); border-radius:11px;}
+  .view-tab{border:0; border-radius:7px; padding:9px 10px; background:transparent; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;}
+  .view-tab.active{background:var(--surface-alt); color:var(--accent); box-shadow:inset 0 0 0 1px rgba(79,216,232,.25);}
+  body[data-view="paper"] [data-live-view]{display:none;}
+  body[data-view="live"] [data-paper-view]{display:none;}
+  .paper-panel{margin:14px 18px 34px; background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:hidden;}
+  .paper-head{padding:16px; border-bottom:1px solid var(--border);}.paper-kicker{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.09em; color:var(--warn); text-transform:uppercase;}.paper-title-row{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-top:5px;}.paper-title{font-size:16px; font-weight:700; letter-spacing:.01em;}.paper-status{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-dim); text-align:right; line-height:1.4;}
+  .paper-disclaimer{margin-top:12px; padding:11px 12px; border-radius:10px; border:1px solid rgba(240,185,61,.35); background:rgba(240,185,61,.08); color:#E7C76C; font-size:11px; line-height:1.45;}.paper-meta{display:grid; grid-template-columns:repeat(3,1fr); gap:7px; padding:12px 16px; background:var(--surface-alt); border-bottom:1px solid var(--border);}.paper-meta-item{min-width:0;}.paper-meta-label{font-family:'IBM Plex Mono',monospace; color:var(--text-faint); font-size:9px; letter-spacing:.06em; text-transform:uppercase;}.paper-meta-value{margin-top:4px; font-family:'IBM Plex Mono',monospace; color:var(--text); font-size:11.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .paper-records{display:flex; flex-direction:column; gap:8px; padding:12px;}.paper-record{border:1px solid var(--border); border-radius:12px; padding:12px; background:#0E131C;}.paper-record-top{display:flex; gap:10px; justify-content:space-between; align-items:flex-start;}.paper-record-title{font-size:13px; font-weight:700;}.paper-record-sub{margin-top:3px; color:var(--text-faint); font-family:'IBM Plex Mono',monospace; font-size:10px;}.paper-badge{font-family:'IBM Plex Mono',monospace; padding:4px 6px; border-radius:5px; font-size:9px; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap;}.paper-badge.open{color:var(--accent); background:rgba(79,216,232,.12);}.paper-badge.closed{color:var(--text-dim); background:var(--surface-alt);}
+  .paper-stats{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:11px;}.paper-stat{background:var(--surface-alt); border:1px solid var(--border); border-radius:8px; padding:8px; min-width:0;}.paper-stat-label{font-size:8.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em;}.paper-stat-value{margin-top:4px; color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}.paper-result{margin-top:9px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:10px;}.paper-empty{padding:28px 18px; color:var(--text-faint); font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.55; text-align:center;}
+  @media (max-width:390px){.paper-meta{grid-template-columns:1fr 1fr;}.paper-meta-item:last-child{grid-column:1/-1;}.paper-stats{gap:4px;}.paper-stat{padding:7px 6px;}}
   /* ---- NIFTY + SENSEX overview row ---- */
   .overview{display:flex; gap:10px; margin:14px 18px 0;}
   .ovcard{flex:1; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:12px 14px; cursor:pointer; transition:border-color .15s;}
@@ -163,7 +174,7 @@
   .history-reset button:disabled{opacity:.5; cursor:wait;}
 </style>
 </head>
-<body>
+<body data-view="live">
 
 <header>
   <div class="titlerow">
@@ -175,16 +186,21 @@
   </div>
 </header>
 
+<nav class="view-nav" aria-label="Dashboard views">
+  <button class="view-tab active" data-view-target="live" type="button">Live data</button>
+  <button class="view-tab" data-view-target="paper" type="button">Paper trades</button>
+</nav>
+
 <div class="demo-banner" id="demoBanner" style="display:none;">
   <span>Showing simulated data — backend not connected yet.</span>
   <button id="demoConfigBtn">Set URL</button>
 </div>
 
-<div class="overview" id="overview"></div>
+<div class="overview" id="overview" data-live-view></div>
 
-<main id="cards"></main>
+<main id="cards" data-live-view></main>
 
-<section class="chart-panel" aria-label="Historical market chart">
+<section class="chart-panel" aria-label="Historical market chart" data-live-view>
   <div class="chart-head">
     <div class="chart-title-row">
       <div><div class="chart-title">Market history · Near-ATM order flow</div><div class="chart-sub">A multi-pane, independently scaled view of the current ATM ±3 strike band. Price, OI, and bid–ask quantities keep separate axes so unlike units are not visually equated.</div></div>
@@ -206,6 +222,8 @@
   <div class="chart-stage" id="marketChart"><div class="chart-empty" id="chartEmpty">Connect to the live Dhan backend to load up to 10 hours of retained market history.</div></div>
   <div class="chart-note">Live-feed updates create event-driven points using source timestamps; nearby updates are coalesced to avoid conflicting same-second chart points. Drag inside the chart to pan; drag either price axis vertically to adjust its scale. Missing quote fields remain gaps rather than invented values. OI change is calculated against the immediately preceding retained point in the current near-ATM band. <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a> · Copyright (c) 2025 TradingView, Inc.</div>
 </section>
+
+<section class="paper-panel" id="paperTrades" data-paper-view aria-label="Paper trade records"></section>
 
 <div class="sheet-backdrop" id="sheetBackdrop">
   <div class="sheet">
@@ -257,6 +275,8 @@ let demoTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let latestData = {};
+let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ lots:10, targetPoints:2, stopLossPoints:5 }, trades:[] };
+let currentView = 'live';
 let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
 const chartState = {
   chart:null, series:{}, points:[], symbol:null, loadToken:0,
@@ -287,6 +307,9 @@ function fmtBps(n){ const v=finite(n); return v===null ? '—' : (v>0?'+':v<0?'�
 function fmtPct(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toFixed(digits) + '%'; }
 function fmtRatio(n){ const v=finite(n); return v===null ? '—' : v.toFixed(2) + '×'; }
 function fmtNum(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toLocaleString('en-IN', {maximumFractionDigits:digits, minimumFractionDigits:digits}); }
+function fmtPrice(n){ const v=finite(n); return v===null ? '—' : '₹' + v.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtSignedPoints(n){ const v=finite(n); return v===null ? '—' : (v>0?'+':v<0?'−':'') + Math.abs(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtStamp(t){ return t ? new Date(t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'medium'}) : '—'; }
 
 function chartTime(point){ const t=finite(point?.t); return t===null ? null : Math.floor(t/1000); }
 function chartValue(point, key){ return finite(point?.[key]); }
@@ -506,6 +529,40 @@ function renderOverview(){
       </div>`;
   }).join('');
 }
+
+function paperResult(trade){
+  if (trade.status==='open') return `Current premium ${fmtPrice(trade.lastPrice)} · unrealized ${fmtSignedPoints(Number(trade.lastPrice)-Number(trade.entryPrice))} points`;
+  const close = trade.closeReason==='target' ? 'Target reached' : trade.closeReason==='stop-loss' ? 'Stop-loss reached' : 'Closed';
+  return `${close} at ${fmtPrice(trade.exitPrice)} · ${fmtSignedPoints(trade.resultPoints)} premium points`;
+}
+
+function renderPaperTrades(){
+  const container=$('paperTrades');
+  const trades=Array.isArray(paperTradeState?.trades)?paperTradeState.trades:[];
+  const rules=paperTradeState?.rules||{};
+  const storage=paperTradeState?.storage||{};
+  const durable=paperTradeState?.enabled===true && storage.mode==='postgres' && storage.status==='ready';
+  const status=durable ? 'Durable records active' : paperTradeState?.enabled ? 'Storage reconnecting' : 'Simulator unavailable';
+  const storageNote=durable ? 'PostgreSQL' : storage.mode==='disabled' ? 'Database not configured' : 'Unavailable';
+  const records=trades.length ? trades.map(trade=>{
+    const isOpen=trade.status==='open';
+    return `<article class="paper-record">
+      <div class="paper-record-top"><div><div class="paper-record-title">Simulated Buy ${trade.optionType==='CALL'?'Call':'Put'} · ${trade.symbol}</div><div class="paper-record-sub">${trade.strike} strike · ${trade.lots} lots · ${trade.signalWindow||'—'} trigger</div></div><span class="paper-badge ${isOpen?'open':'closed'}">${isOpen?'Open':'Closed'}</span></div>
+      <div class="paper-stats"><div class="paper-stat"><div class="paper-stat-label">Entry</div><div class="paper-stat-value">${fmtPrice(trade.entryPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Target</div><div class="paper-stat-value rise">${fmtPrice(trade.targetPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Stop loss</div><div class="paper-stat-value fall">${fmtPrice(trade.stopLossPrice)}</div></div></div>
+      <div class="paper-result ${Number(trade.resultPoints)>0?'rise':Number(trade.resultPoints)<0?'fall':''}">${paperResult(trade)}</div>
+      <div class="paper-record-sub">Opened ${fmtStamp(trade.openedAt)}${trade.closedAt?` · Closed ${fmtStamp(trade.closedAt)}`:''}</div>
+    </article>`;
+  }).join('') : `<div class="paper-empty">No simulated orders yet. A record is created only after an exact completed window produces a qualifying strong-pressure signal and a valid ATM option premium is available.</div>`;
+  container.innerHTML=`<div class="paper-head"><div class="paper-kicker">PAPER ONLY · NO REAL ORDER</div><div class="paper-title-row"><div class="paper-title">Simulated option-trade records</div><div class="paper-status">${status}<br>${storageNote}</div></div><div class="paper-disclaimer">This is an automated paper simulation, not a broker order and not investment advice. Strong upward pressure simulates a Buy Call; strong downward pressure simulates a Buy Put. Entry, target, and stop-loss use option premium only.</div></div><div class="paper-meta"><div class="paper-meta-item"><div class="paper-meta-label">Recorded size</div><div class="paper-meta-value">${rules.lots??10} lots</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium target</div><div class="paper-meta-value">+${rules.targetPoints??2} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium stop</div><div class="paper-meta-value">−${rules.stopLossPoints??5} points</div></div></div><div class="paper-records">${records}</div>`;
+}
+
+function setView(view){
+  currentView=view==='paper'?'paper':'live';
+  document.body.dataset.view=currentView;
+  document.querySelectorAll('[data-view-target]').forEach(button=>button.classList.toggle('active',button.dataset.viewTarget===currentView));
+  if (currentView==='paper') renderPaperTrades();
+}
+document.querySelectorAll('[data-view-target]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.viewTarget)));
 $('overview').addEventListener('click', (e) => {
   const card = e.target.closest('.ovcard');
   if (card) selectSymbol(card.dataset.sym);
@@ -630,6 +687,12 @@ function update(data){
   if (payload?.status) setStatus(payload.status==='live' ? 'live' : payload.status==='stale' ? 'stale' : payload.status==='connecting' ? 'connecting' : 'error');
 }
 
+function updatePaperTrades(data){
+  if (!data || typeof data!=='object') return;
+  paperTradeState=data;
+  if (currentView==='paper') renderPaperTrades();
+}
+
 function selectSymbol(sym){
   if (symbol===sym) return;
   symbol = sym;
@@ -657,6 +720,9 @@ async function connect(){
       renderOverview();
       loadChartHistory(symbol);
     }
+    if (cfg?.paperTrading) updatePaperTrades(cfg.paperTrading);
+    const paperResponse=await fetch(backendUrl.replace(/\/$/,'') + '/api/paper-trades');
+    if (paperResponse.ok) updatePaperTrades(await paperResponse.json());
   } catch(_) { /* fall through — SSE will still try, overview just shows stale symbol list */ }
 
   try{
@@ -664,6 +730,7 @@ async function connect(){
     es = stream;
     stream.onopen = () => { reconnectAttempts = 0; setStatus('live'); };
     stream.onmessage = (e) => { try { update(JSON.parse(e.data)); } catch(_){} };
+    stream.addEventListener('paper-trades',(e)=>{ try { updatePaperTrades(JSON.parse(e.data)); } catch(_){} });
     stream.onerror = () => {
       if (es !== stream) return;
       stream.close(); es = null;
