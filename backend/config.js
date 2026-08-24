@@ -74,6 +74,12 @@ export const config = {
   liveFeedEventBucketMs: Number(tunables.liveFeedEventBucketMs) || 1000,
   thresholds: tunables.thresholds,
   notifyCooldownMs: tunables.notifyCooldownMs,
+  paperTrading: {
+    enabled: tunables.paperTrading?.enabled === true,
+    lots: Number(tunables.paperTrading?.lots) || 10,
+    targetPoints: Number(tunables.paperTrading?.targetPoints) || 2,
+    stopLossPoints: Number(tunables.paperTrading?.stopLossPoints) || 5,
+  },
 };
 
 export const notificationsEnabled = !!(secrets.vapidPublicKey && secrets.vapidPrivateKey);
