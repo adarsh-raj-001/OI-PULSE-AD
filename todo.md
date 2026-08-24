@@ -46,4 +46,10 @@
 - [x] Publish the corrected immediate reset semantics through a pull request.
 - [x] Audit the reported Call/Put/Total, baseline, and strike-alignment calculation mismatch shown after the immediate reset-baseline deployment.
 - [x] Correct and validate the missing-OI calculation-integrity defect without changing the global Dhan polling safeguards.
-- [ ] Publish the validated OI calculation-integrity correction through a pull request.
+- [x] Publish the validated OI calculation-integrity correction through a pull request.
+- [x] Add a clearly labelled paper-trading simulator that creates simulated Buy Call records only for qualifying strong-upward states and simulated Buy Put records only for qualifying strong-downward states.
+- [x] Apply a 10-lot simulated quantity, ₹2 target, and ₹5 stop-loss to each paper trade without connecting to a broker or placing real orders.
+- [x] Persist paper-trade lifecycle records and add navigation between the live OI dashboard and paper-trade records.
+- [x] Validate simulated order lifecycle, option-price outcome checks, and non-broker safety boundaries before pull-request publication.
+- [x] Run the paper simulator server-side from the existing Dhan event stream and persist its records in the configured PostgreSQL database.
+- [x] Prevent duplicate simulated trades by allowing at most one active trade per symbol during a continuous same-direction qualifying signal.
