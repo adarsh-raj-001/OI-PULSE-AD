@@ -4,6 +4,7 @@ import { nearestStrikeIndex, sortedStrikes } from './oiWindows.js';
 const LOT_SIZES = new Set([10, 20]);
 const TRIGGER_LEVELS = new Set(['strong', 'mild']);
 const MAX_SECONDS = 86_400;
+const MAX_OPTION_QUOTE_AGE_MS = 15_000;
 
 const finite = (value) => {
   const number = Number(value);
@@ -62,20 +63,33 @@ function preferredSignal(payload, triggerLevel) {
   return null;
 }
 
-function atmOption(summary, optionSide) {
+function liveOptionQuote(leg, timestamp) {
+  const price = finite(leg?.lastPrice);
+  const observedAt = finite(leg?.lastPriceAt);
+  if (price === null || price <= 0 || observedAt === null || observedAt > timestamp || timestamp - observedAt > MAX_OPTION_QUOTE_AGE_MS) return null;
+  return { price, observedAt };
+}
+
+function atmOption(summary, optionSide, timestamp) {
   const strikes = sortedStrikes(summary?.strikes);
   const index = nearestStrikeIndex(strikes, summary?.underlyingPrice);
   if (index === null) return null;
   const strike = strikes[index];
   const leg = summary.strikes?.[strike]?.[optionSide];
-  const price = finite(leg?.lastPrice);
+  const quote = liveOptionQuote(leg, timestamp);
   const securityId = finite(leg?.securityId);
-  if (price === null || price <= 0 || securityId === null) return null;
-  return { strike, securityId, entryPrice: price };
+  if (!quote || securityId === null) return null;
+  return {
+    strike,
+    securityId,
+    entryPrice: quote.price,
+    entryPriceSource: 'live-option-ltp',
+    entryPriceObservedAt: quote.observedAt,
+  };
 }
 
-function optionLastPrice(summary, trade) {
-  return finite(summary?.strikes?.[trade.strike]?.[trade.optionSide]?.lastPrice);
+function optionLastPrice(summary, trade, timestamp) {
+  return liveOptionQuote(summary?.strikes?.[trade.strike]?.[trade.optionSide], timestamp);
 }
 
 export function createPaperTradeEngine({ store, rules, onChange = () => {}, now = () => Date.now() }) {
@@ -98,12 +112,64 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
     return trades.find((trade) => trade.symbol === symbol && trade.status === 'open') || null;
   }
 
+  function tradePnl(trade) {
+    const entryPrice = finite(trade?.entryPrice);
+    const quantity = Math.max(0, finite(trade?.lots) ?? 0);
+    if (entryPrice === null) return { points: null, money: null };
+    const points = trade?.status === 'open'
+      ? (() => {
+        const lastPrice = finite(trade?.lastPrice);
+        return lastPrice === null ? null : lastPrice - entryPrice;
+      })()
+      : finite(trade?.resultPoints) ?? (() => {
+        const exitPrice = finite(trade?.exitPrice);
+        return exitPrice === null ? null : exitPrice - entryPrice;
+      })();
+    return { points, money: points === null ? null : points * quantity };
+  }
+
+  function performance() {
+    const totals = {
+      totalTrades: trades.length,
+      openTrades: 0,
+      closedTrades: 0,
+      winningClosedTrades: 0,
+      losingClosedTrades: 0,
+      realisedPoints: 0,
+      unrealisedPoints: 0,
+      netPoints: 0,
+      realisedMoney: 0,
+      unrealisedMoney: 0,
+      netMoney: 0,
+    };
+    for (const trade of trades) {
+      const pnl = tradePnl(trade);
+      const isOpen = trade.status === 'open';
+      if (isOpen) totals.openTrades += 1;
+      else totals.closedTrades += 1;
+      if (pnl.points === null || pnl.money === null) continue;
+      if (isOpen) {
+        totals.unrealisedPoints += pnl.points;
+        totals.unrealisedMoney += pnl.money;
+      } else {
+        totals.realisedPoints += pnl.points;
+        totals.realisedMoney += pnl.money;
+        if (pnl.points > 0) totals.winningClosedTrades += 1;
+        if (pnl.points < 0) totals.losingClosedTrades += 1;
+      }
+    }
+    totals.netPoints = totals.realisedPoints + totals.unrealisedPoints;
+    totals.netMoney = totals.realisedMoney + totals.unrealisedMoney;
+    return totals;
+  }
+
   function snapshot() {
     return {
       enabled,
       storage: store.getStatus(),
       rules: { ...currentRules },
       trades: [...trades].sort((a, b) => b.openedAt - a.openedAt),
+      performance: performance(),
     };
   }
 
@@ -152,16 +218,18 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
   async function monitor(symbol, summary, timestamp) {
     const trade = activeTrade(symbol);
     if (!trade) return false;
-    const currentPrice = optionLastPrice(summary, trade);
-    if (currentPrice !== null) {
-      trade.lastPrice = currentPrice;
+    const quote = optionLastPrice(summary, trade, timestamp);
+    const currentPrice = quote?.price ?? null;
+    if (quote) {
+      trade.lastPrice = quote.price;
+      trade.lastPriceObservedAt = quote.observedAt;
       trade.lastUpdatedAt = timestamp;
-      if (currentPrice >= trade.targetPrice) {
-        await closeTrade(trade, currentPrice, timestamp, 'target');
+      if (quote.price >= trade.targetPrice) {
+        await closeTrade(trade, quote.price, timestamp, 'target');
         return true;
       }
-      if (currentPrice <= trade.stopLossPrice) {
-        await closeTrade(trade, currentPrice, timestamp, 'stop-loss');
+      if (quote.price <= trade.stopLossPrice) {
+        await closeTrade(trade, quote.price, timestamp, 'stop-loss');
         return true;
       }
     }
@@ -188,7 +256,7 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
     }
     await setSignalState(symbol, signal.direction, timestamp);
     if (activeTrade(symbol) || (cooldownUntil[symbol] || 0) > timestamp) return false;
-    const option = atmOption(summary, signal.optionSide);
+    const option = atmOption(summary, signal.optionSide, timestamp);
     if (!option) return false;
     const expiresAt = currentRules.maxAliveSeconds > 0 ? timestamp + (currentRules.maxAliveSeconds * 1000) : null;
     const trade = {
@@ -201,7 +269,10 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
       strike: option.strike,
       lots: currentRules.lots,
       entryPrice: option.entryPrice,
+      entryPriceSource: option.entryPriceSource,
+      entryPriceObservedAt: option.entryPriceObservedAt,
       lastPrice: option.entryPrice,
+      lastPriceObservedAt: option.entryPriceObservedAt,
       targetPrice: option.entryPrice + currentRules.targetPoints,
       stopLossPrice: Math.max(0, option.entryPrice - currentRules.stopLossPoints),
       openedAt: timestamp,

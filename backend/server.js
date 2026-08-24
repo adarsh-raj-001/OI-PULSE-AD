@@ -102,6 +102,16 @@ function cloneSummary(summary) {
   return structuredClone(summary);
 }
 
+function markOptionQuoteTimes(summary, observedAt) {
+  for (const legs of Object.values(summary?.strikes || {})) {
+    for (const side of ['ce', 'pe']) {
+      const leg = legs?.[side];
+      if (Number.isFinite(leg?.lastPrice)) leg.lastPriceAt = observedAt;
+    }
+  }
+  return summary;
+}
+
 function updatePayload(name, point, nextRestState = null) {
   if (nextRestState) restState[name] = nextRestState;
   const payload = computePayload(name);
@@ -216,7 +226,10 @@ function applyLivePacket(packet) {
   } else {
     const leg = summary.strikes?.[ref.strike]?.[ref.side];
     if (!leg) return;
-    if (Number.isFinite(packet.lastPrice)) leg.lastPrice = packet.lastPrice;
+    if (Number.isFinite(packet.lastPrice)) {
+      leg.lastPrice = packet.lastPrice;
+      leg.lastPriceAt = packet.receivedAt;
+    }
     if (Number.isFinite(packet.oi)) leg.oi = packet.oi;
     if (Number.isFinite(packet.volume)) leg.volume = packet.volume;
     const top = packet.depth?.[0];
@@ -251,6 +264,7 @@ async function pollSymbol(sym) {
   try {
     const summary = await source.fetchSnapshot(sym);
     const t = Date.now();
+    markOptionQuoteTimes(summary, t);
     const hasRetainedHistory = history[sym.name].length > 0;
     liveState[sym.name] = cloneSummary(summary);
     refreshLiveSubscriptions();
