@@ -53,3 +53,9 @@
 - [x] Validate simulated order lifecycle, option-price outcome checks, and non-broker safety boundaries before pull-request publication.
 - [x] Run the paper simulator server-side from the existing Dhan event stream and persist its records in the configured PostgreSQL database.
 - [x] Prevent duplicate simulated trades by allowing at most one active trade per symbol during a continuous same-direction qualifying signal.
+- [x] Add on-screen paper-simulator controls for enable/disable, lot size, trigger sensitivity, target, stop-loss, maximum alive time, and cooldown.
+- [x] Persist and validate runtime paper-simulator settings so active configuration survives an eligible backend restart.
+- [x] Close simulated trades when their configured maximum alive time expires, unless they have already closed through target or stop-loss.
+- [x] Enforce a configurable per-symbol cooldown after every simulated trade closes before a new qualifying entry may open.
+- [x] Safely close every open simulated trade with a simulator-disabled reason before disabling new paper-trade entries.
+- [x] Validate editable controls, time-based exits, cooldown behavior, persistence, and disable-close sequencing before publication.

@@ -225,28 +225,45 @@ does **not** receive or store any order credentials, and does **not** submit a
 real-money or exchange order. It is a mechanical display of configured rules,
 not investment advice or a prediction.
 
-| Completed exact-window condition | Simulated record | Entry and lifecycle |
+| Completed exact-window condition | Simulated record | Default entry and lifecycle |
 |---|---|---|
 | `Strong upward pressure` | Buy Call at the current ATM CE premium | 10 lots; target = entry premium + 2 points; stop-loss = entry premium − 5 points. |
 | `Strong downward pressure` | Buy Put at the current ATM PE premium | 10 lots; target = entry premium + 2 points; stop-loss = entry premium − 5 points. |
 | A reset/start baseline or a non-strong label | No record | Provisional current-market baseline comparisons never qualify. |
 
+The settings sheet includes **screen-only runtime controls** for the paper
+simulator. They are durable server-side settings; browser storage is not used
+for trading rules and no secret is exposed to the client.
+
+| Control | Allowed values and behavior |
+|---|---|
+| Paper trading switch | **Enabled** permits new simulated entries. Switching it **off** first closes every open simulated record using its last observed option premium with the reason `simulator-disabled`, then blocks new simulated entries. No real order is sent. |
+| Lot size | 10 or 20 simulated lots. |
+| Trigger point | **Strong pressure** uses only strong upward/downward labels. **Mild or strong** also permits mild upward/downward labels. All triggers still require a completed exact 5m, 30m, or 3h window. |
+| Target and stop-loss | Positive option-premium points used to calculate the target above and stop below the entry premium. |
+| Maximum alive time | Whole seconds. `0` means no time-based close. A positive value closes a still-open record at expiry even if target and stop were not reached. |
+| Cooldown after close | Whole seconds to wait after a simulated trade closes before that symbol can open another qualifying simulated trade. `0` allows a subsequent live update to open a new qualifying record. |
+
 The simulator examines completed 5-minute, 30-minute, and 3-hour windows in
-that order and uses the first qualifying strong label. It permits **one open
-paper trade per symbol** during a continuous same-direction signal. Once
-closed, a new record for that symbol requires the signal to leave the qualifying
-state and enter again, preventing duplicate entries on every live update.
-Target and stop-loss checks use the original option contract's observed LTP,
-even after the ATM strike moves.
+that order and uses the first qualifying label for the selected trigger level.
+It permits **one open paper trade per symbol**. Target and stop-loss checks use
+the original option contract's observed LTP, even after the ATM strike moves.
+The maximum-alive-time timer is a simulator clock, not a broker instruction: at
+expiry it closes the record at the latest observed option LTP if no newer quote
+arrived at the exact deadline. Target or stop-loss exits take precedence when a
+fresh observed LTP reaches either boundary before expiry. The entry-time target,
+stop, time limit, and cooldown are kept with each record, so later settings
+changes apply only to future simulated entries.
 
 Paper-trade records share the configured `OI_HISTORY_DATABASE_URL` PostgreSQL
-database but use a separate `oi_pulse_paper_trades` table. The server also
-persists the continuous-signal guard, so a restart does not manufacture a
-duplicate record. Without this database URL, the paper simulator explicitly
-remains unavailable rather than claiming that order records are durable. The
-records view reports **premium points** only. It intentionally does not claim
-rupee P&L because an accurate currency calculation also needs the applicable
-exchange contract lot multiplier for the specific instrument.
+database but use separate `oi_pulse_paper_trades`,
+`oi_pulse_paper_trade_signals`, and `oi_pulse_paper_trade_settings` tables. The
+server restores records, simulator controls, and any post-close cooldown after
+a restart. Without this database URL, the paper simulator explicitly remains
+unavailable rather than claiming that order records or controls are durable.
+The records view reports **premium points** only. It intentionally does not
+claim rupee P&L because an accurate currency calculation also needs the
+applicable exchange contract lot multiplier for the specific instrument.
 
 | Storage choice | Restart-safe OI windows | Trade-off |
 |---|---|---|
