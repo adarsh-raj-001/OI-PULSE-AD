@@ -77,6 +77,8 @@ export const config = {
   paperTrading: {
     enabled: tunables.paperTrading?.enabled === true,
     lots: Number(tunables.paperTrading?.lots) || 10,
+    symbolEnabled: tunables.paperTrading?.symbolEnabled || { NIFTY: true, SENSEX: true },
+    contractLotSizes: tunables.paperTrading?.contractLotSizes || { NIFTY: 65, SENSEX: 20 },
     triggerLevel: tunables.paperTrading?.triggerLevel === 'mild' ? 'mild' : 'strong',
     targetPoints: Number(tunables.paperTrading?.targetPoints) || 2,
     stopLossPoints: Number(tunables.paperTrading?.stopLossPoints) || 5,

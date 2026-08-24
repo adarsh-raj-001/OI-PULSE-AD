@@ -44,10 +44,13 @@
 
   "_notifyCooldownMs_comment": "Minimum gap between two notifications for the same symbol+window, so a sustained move above threshold doesn't spam you every poll cycle.",
   "notifyCooldownMs": 600000,
-  "_paperTrading_comment": "Paper-only simulator defaults. Screen controls can persist enabled state, allowed lot size, trigger level, target, stop-loss, lifetime, and cooldown when PostgreSQL is configured. No broker connection or Dhan order endpoint is used.",
+  "_paperTrading_comment": "Paper-only simulator defaults. Screen controls can persist enabled state, per-symbol enablement, allowed lot count, trigger level, target, stop-loss, lifetime, and cooldown when PostgreSQL is configured. No broker connection or Dhan order endpoint is used.",
   "paperTrading": {
     "enabled": true,
     "lots": 10,
+    "symbolEnabled": { "NIFTY": true, "SENSEX": true },
+    "_contractLotSizes_comment": "Current contract units per lot, verified against the public Dhan instrument master on 24 Aug 2026. NIFTY active option rows are 65 units per lot and SENSEX active option rows are 20. Update these when the exchange/Dhan master changes; each new paper trade stores its multiplier at entry.",
+    "contractLotSizes": { "NIFTY": 65, "SENSEX": 20 },
     "triggerLevel": "strong",
     "targetPoints": 2,
     "stopLossPoints": 5,

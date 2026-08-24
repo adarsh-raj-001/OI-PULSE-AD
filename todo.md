@@ -76,3 +76,9 @@
 - [x] Replace aggregate and per-trade lot-point P&L displays with paper rupee P&L calculated as premium movement × simulated quantity.
 - [x] Validate monetary paper P&L calculations, fresh-LTP fill behavior, responsive display, and frontend/docs parity.
 - [x] Amend the enhancement commit and open the review pull request once GitHub branch-push authorization is available.
+- [x] Merge approved PR #13 into main and verify the deployed paper-only P&L enhancement is available.
+- [x] Verify available Dhan or exchange contract-size metadata and define versioned NIFTY/SENSEX shares-per-lot values for paper P&L.
+- [x] Correct paper-money P&L to calculate premium movement × configured lots × symbol-specific shares per lot.
+- [x] Add persistent independent NIFTY and SENSEX enable/disable controls that block new entries only for the disabled symbol.
+- [x] Validate per-symbol disable behavior, lot-multiplier P&L, durable settings recovery, and frontend/docs parity.
+- [x] Publish the reviewed lot-based P&L and per-symbol-control improvement through a pull request.

@@ -3,6 +3,7 @@ import { nearestStrikeIndex, sortedStrikes } from './oiWindows.js';
 
 const LOT_SIZES = new Set([10, 20]);
 const TRIGGER_LEVELS = new Set(['strong', 'mild']);
+const PAPER_SYMBOLS = ['NIFTY', 'SENSEX'];
 const MAX_SECONDS = 86_400;
 const MAX_OPTION_QUOTE_AGE_MS = 15_000;
 
@@ -35,9 +36,15 @@ function normalizeRules(input = {}, base = {}) {
     ? (base.triggerLevel || 'strong')
     : String(input.triggerLevel).toLowerCase();
   if (!TRIGGER_LEVELS.has(triggerCandidate)) throw new Error('Trigger level must be mild or strong.');
+  const sourceSymbolEnabled = {
+    ...(base.symbolEnabled || {}),
+    ...(input.symbolEnabled && typeof input.symbolEnabled === 'object' ? input.symbolEnabled : {}),
+  };
+  const symbolEnabled = Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, sourceSymbolEnabled[symbol] !== false]));
   return {
     enabled,
     lots: lotsCandidate,
+    symbolEnabled,
     triggerLevel: triggerCandidate,
     targetPoints: positiveNumber(input.targetPoints, base.targetPoints ?? 2, 'Target'),
     stopLossPoints: positiveNumber(input.stopLossPoints, base.stopLossPoints ?? 5, 'Stop-loss'),
@@ -92,13 +99,18 @@ function optionLastPrice(summary, trade, timestamp) {
   return liveOptionQuote(summary?.strikes?.[trade.strike]?.[trade.optionSide], timestamp);
 }
 
-export function createPaperTradeEngine({ store, rules, onChange = () => {}, now = () => Date.now() }) {
+export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, onChange = () => {}, now = () => Date.now() }) {
   const trades = [];
   const signalStates = {};
   const cooldownUntil = {};
+  const currentContractLotSizes = Object.fromEntries(PAPER_SYMBOLS.map((symbol) => {
+    const size = finite(contractLotSizes[symbol]);
+    return [symbol, size !== null && size > 0 ? size : 1];
+  }));
   let currentRules = normalizeRules(rules, {
     enabled: false,
     lots: 10,
+    symbolEnabled: Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, true])),
     triggerLevel: 'strong',
     targetPoints: 2,
     stopLossPoints: 5,
@@ -114,8 +126,10 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
 
   function tradePnl(trade) {
     const entryPrice = finite(trade?.entryPrice);
-    const quantity = Math.max(0, finite(trade?.lots) ?? 0);
-    if (entryPrice === null) return { points: null, money: null };
+    const lots = Math.max(0, finite(trade?.lots) ?? 0);
+    const storedLotSize = finite(trade?.contractLotSize);
+    const contractLotSize = storedLotSize !== null && storedLotSize > 0 ? storedLotSize : currentContractLotSizes[trade?.symbol];
+    if (entryPrice === null || !Number.isFinite(contractLotSize) || contractLotSize <= 0) return { points: null, money: null, contractLotSize: null };
     const points = trade?.status === 'open'
       ? (() => {
         const lastPrice = finite(trade?.lastPrice);
@@ -125,7 +139,7 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
         const exitPrice = finite(trade?.exitPrice);
         return exitPrice === null ? null : exitPrice - entryPrice;
       })();
-    return { points, money: points === null ? null : points * quantity };
+    return { points, money: points === null ? null : points * lots * contractLotSize, contractLotSize };
   }
 
   function performance() {
@@ -168,6 +182,7 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
       enabled,
       storage: store.getStatus(),
       rules: { ...currentRules },
+      contractLotSizes: { ...currentContractLotSizes },
       trades: [...trades].sort((a, b) => b.openedAt - a.openedAt),
       performance: performance(),
     };
@@ -249,6 +264,10 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
   }
 
   async function maybeOpen(symbol, payload, summary, timestamp) {
+    if (currentRules.symbolEnabled[symbol] !== true) {
+      await setSignalState(symbol, null, timestamp);
+      return false;
+    }
     const signal = preferredSignal(payload, currentRules.triggerLevel);
     if (!signal) {
       await setSignalState(symbol, null, timestamp);
@@ -268,6 +287,8 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
       securityId: option.securityId,
       strike: option.strike,
       lots: currentRules.lots,
+      contractLotSize: currentContractLotSizes[symbol],
+      contractLotSizeSource: 'dhan-instrument-master-config',
       entryPrice: option.entryPrice,
       entryPriceSource: option.entryPriceSource,
       entryPriceObservedAt: option.entryPriceObservedAt,
@@ -290,11 +311,12 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
     return true;
   }
 
-  async function disableAndClose(timestamp) {
-    const openTrades = trades.filter((trade) => trade.status === 'open');
+  async function disableAndClose(timestamp, symbols = null, closeReason = 'simulator-disabled') {
+    const allowed = symbols ? new Set(symbols) : null;
+    const openTrades = trades.filter((trade) => trade.status === 'open' && (!allowed || allowed.has(trade.symbol)));
     for (const trade of openTrades) {
       const exitPrice = finite(trade.lastPrice) ?? trade.entryPrice;
-      await closeTrade(trade, exitPrice, timestamp, 'simulator-disabled', 'last-observed-option-ltp');
+      await closeTrade(trade, exitPrice, timestamp, closeReason, 'last-observed-option-ltp');
     }
   }
 
@@ -307,6 +329,10 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
       }
       const nextRules = normalizeRules(nextSettings, currentRules);
       if (nextRules.enabled === false) await disableAndClose(timestamp);
+      else {
+        const disabledSymbols = PAPER_SYMBOLS.filter((symbol) => currentRules.symbolEnabled[symbol] === true && nextRules.symbolEnabled[symbol] === false);
+        if (disabledSymbols.length) await disableAndClose(timestamp, disabledSymbols, 'symbol-disabled');
+      }
       currentRules = nextRules;
       enabled = currentRules.enabled === true;
       await store.saveSettings(currentRules, timestamp);

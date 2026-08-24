@@ -247,8 +247,16 @@
         <div><div class="paper-switch-title">Paper trading</div><div class="paper-switch-note" id="paperEnabledNote">Loading simulator status…</div></div>
         <label class="paper-switch" aria-label="Enable paper trading"><input id="paperEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
       </div>
+      <div class="paper-switch-row">
+        <div><div class="paper-switch-title">Trade NIFTY paper signals</div><div class="paper-switch-note">Disabling NIFTY blocks new NIFTY simulations and closes any open NIFTY paper position at its last observed option premium.</div></div>
+        <label class="paper-switch" aria-label="Enable NIFTY paper trading"><input id="paperNiftyEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
+      </div>
+      <div class="paper-switch-row">
+        <div><div class="paper-switch-title">Trade SENSEX paper signals</div><div class="paper-switch-note">Disabling SENSEX blocks new SENSEX simulations and closes any open SENSEX paper position at its last observed option premium.</div></div>
+        <label class="paper-switch" aria-label="Enable SENSEX paper trading"><input id="paperSensexEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
+      </div>
       <div class="paper-control-grid" id="paperControlFields">
-        <div><label for="paperLots">Simulated quantity</label><select id="paperLots"><option value="10">10 units</option><option value="20">20 units</option></select></div>
+        <div><label for="paperLots">Lots per simulation</label><select id="paperLots"><option value="10">10 lots</option><option value="20">20 lots</option></select></div>
         <div><label for="paperTrigger">Trigger point</label><select id="paperTrigger"><option value="strong">Strong pressure</option><option value="mild">Mild or strong</option></select></div>
         <div><label for="paperTarget">Target · premium points</label><input id="paperTarget" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
         <div><label for="paperStop">Stop-loss · premium points</label><input id="paperStop" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
@@ -297,7 +305,7 @@ let demoTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let latestData = {};
-let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ enabled:false, lots:10, triggerLevel:'strong', targetPoints:2, stopLossPoints:5, maxAliveSeconds:0, cooldownSeconds:0 }, trades:[] };
+let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ enabled:false, lots:10, symbolEnabled:{NIFTY:true,SENSEX:true}, triggerLevel:'strong', targetPoints:2, stopLossPoints:5, maxAliveSeconds:0, cooldownSeconds:0 }, contractLotSizes:{NIFTY:65,SENSEX:20}, trades:[] };
 let currentView = 'live';
 let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
 const chartState = {
@@ -581,15 +589,16 @@ function renderOverview(){
 
 function paperResult(trade){
   if (trade.status==='open') return `Current premium ${fmtPrice(trade.lastPrice)} · unrealized ${fmtSignedPoints(Number(trade.lastPrice)-Number(trade.entryPrice))} points`;
-  const close = trade.closeReason==='target' ? 'Target reached' : trade.closeReason==='stop-loss' ? 'Stop-loss reached' : trade.closeReason==='time-expired' ? 'Maximum alive time reached' : trade.closeReason==='simulator-disabled' ? 'Closed when simulator was disabled' : 'Closed';
+  const close = trade.closeReason==='target' ? 'Target reached' : trade.closeReason==='stop-loss' ? 'Stop-loss reached' : trade.closeReason==='time-expired' ? 'Maximum alive time reached' : trade.closeReason==='simulator-disabled' ? 'Closed when simulator was disabled' : trade.closeReason==='symbol-disabled' ? `Closed when ${trade.symbol} paper trading was disabled` : 'Closed';
   return `${close} at ${fmtPrice(trade.exitPrice)} · ${fmtSignedPoints(trade.resultPoints)} premium points`;
 }
 
 function paperTradePnl(trade){
-  const entry=finite(trade?.entryPrice), quantity=finite(trade?.lots);
+  const entry=finite(trade?.entryPrice), lots=finite(trade?.lots);
+  const contractLotSize=finite(trade?.contractLotSize) ?? finite(paperTradeState?.contractLotSizes?.[trade?.symbol]);
   const mark=trade?.status==='open' ? finite(trade?.lastPrice) : finite(trade?.exitPrice);
   const points=trade?.status==='open' ? (entry===null||mark===null?null:mark-entry) : (finite(trade?.resultPoints) ?? (entry===null||mark===null?null:mark-entry));
-  return {points,money:points===null||quantity===null?null:points*quantity};
+  return {points,money:points===null||lots===null||contractLotSize===null?null:points*lots*contractLotSize,contractLotSize};
 }
 
 function localPaperPerformance(trades){
@@ -609,7 +618,7 @@ function paperTradeCard(trade, livePosition=false){
   const fillTime=trade.entryPriceObservedAt?fmtStamp(trade.entryPriceObservedAt):'time not retained';
   const liveDetails=livePosition ? `<div class="paper-live-grid"><div class="paper-live-kpi"><div class="k">Current premium</div><div class="v">${fmtPrice(trade.lastPrice)}</div></div><div class="paper-live-kpi"><div class="k">Unrealized P&L</div><div class="v ${pnlClass}">${fmtSignedMoney(pnl.money)}</div></div><div class="paper-live-kpi"><div class="k">Time status</div><div class="v">${trade.expiresAt?`Until ${fmtStamp(trade.expiresAt)}`:'No time exit'}</div></div><div class="paper-live-kpi"><div class="k">Opened</div><div class="v">${fmtStamp(trade.openedAt)}</div></div></div>` : '';
   return `<article class="paper-record ${livePosition?'paper-live-position':''}">
-    <div class="paper-record-top"><div><div class="paper-record-title">Simulated Buy ${trade.optionType==='CALL'?'Call':'Put'} · ${trade.symbol}</div><div class="paper-record-sub">${trade.strike} strike · ${trade.lots} simulated units · ${trade.signalWindow||'—'} trigger</div></div><span class="paper-badge ${isOpen?'open':'closed'}">${isOpen?'Open':'Closed'}</span></div>
+    <div class="paper-record-top"><div><div class="paper-record-title">Simulated Buy ${trade.optionType==='CALL'?'Call':'Put'} · ${trade.symbol}</div><div class="paper-record-sub">${trade.strike} strike · ${trade.lots} lots × ${pnl.contractLotSize??'—'} units/lot · ${trade.signalWindow||'—'} trigger</div></div><span class="paper-badge ${isOpen?'open':'closed'}">${isOpen?'Open':'Closed'}</span></div>
     <div class="paper-stats"><div class="paper-stat"><div class="paper-stat-label">Entry LTP</div><div class="paper-stat-value">${fmtPrice(trade.entryPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Target</div><div class="paper-stat-value rise">${fmtPrice(trade.targetPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Stop loss</div><div class="paper-stat-value fall">${fmtPrice(trade.stopLossPrice)}</div></div></div>
     <div class="paper-fill-note"><strong>${fillLabel}</strong> at ${fillTime}</div>${liveDetails}<div class="paper-result ${pnlClass}">${paperResult(trade)}</div><div class="paper-pnl-inline ${pnlClass}">${isOpen?'Open paper P&L':'Realised paper P&L'}: ${fmtSignedMoney(pnl.money)}</div>
     <div class="paper-record-sub">Opened ${fmtStamp(trade.openedAt)}${trade.expiresAt?` · Auto-close ${fmtStamp(trade.expiresAt)}`:' · No time exit'}${trade.closedAt?` · Closed ${fmtStamp(trade.closedAt)}`:''}</div>
@@ -621,6 +630,7 @@ function renderPaperTrades(){
   const trades=Array.isArray(paperTradeState?.trades)?paperTradeState.trades:[];
   const performance=paperTradeState?.performance||localPaperPerformance(trades);
   const rules=paperTradeState?.rules||{};
+  const contractLotSizes=paperTradeState?.contractLotSizes||{};
   const storage=paperTradeState?.storage||{};
   const durable=paperTradeState?.enabled===true && storage.mode==='postgres' && storage.status==='ready';
   const status=durable ? 'Durable records active' : paperTradeState?.enabled ? 'Storage reconnecting' : 'Simulator unavailable';
@@ -633,7 +643,7 @@ function renderPaperTrades(){
   const netClass=performance.netMoney>0?'rise':performance.netMoney<0?'fall':'';
   const realisedClass=performance.realisedMoney>0?'rise':performance.realisedMoney<0?'fall':'';
   const openClass=performance.unrealisedMoney>0?'rise':performance.unrealisedMoney<0?'fall':'';
-  container.innerHTML=`<div class="paper-head"><div class="paper-kicker">PAPER ONLY · NO REAL ORDER</div><div class="paper-title-row"><div class="paper-title">Simulated option-trade records</div><div class="paper-status">${status}<br>${storageNote}</div></div><div class="paper-disclaimer">This is an automated paper simulation, not a broker order and not investment advice. Qualifying upward pressure simulates a Buy Call; qualifying downward pressure simulates a Buy Put. Entry, target, and stop-loss use option premium only.</div></div><section class="paper-pnl-summary" aria-label="Aggregate paper profit and loss"><div class="paper-pnl-head"><div><div class="paper-pnl-title">Overall paper P&L</div><div class="paper-pnl-sub">Closed and currently open paper positions</div></div><span class="paper-pnl-badge">${performance.totalTrades||0} records</span></div><div class="paper-pnl-grid"><div class="paper-pnl-kpi"><div class="k">Net P&L</div><div class="v ${netClass}">${fmtSignedMoney(performance.netMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Realised</div><div class="v ${realisedClass}">${fmtSignedMoney(performance.realisedMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Open P&L</div><div class="v ${openClass}">${fmtSignedMoney(performance.unrealisedMoney)}</div></div></div><div class="paper-pnl-note">Paper rupee P&L = option-premium movement × simulated quantity. It excludes exchange contract multipliers, brokerage, fees, taxes, margin, and slippage. Closed: ${performance.closedTrades||0} · Wins: ${performance.winningClosedTrades||0} · Losses: ${performance.losingClosedTrades||0}.</div></section><div class="paper-meta"><div class="paper-meta-item"><div class="paper-meta-label">Simulator</div><div class="paper-meta-value">${rules.enabled?'Enabled':'Disabled'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Simulated quantity</div><div class="paper-meta-value">${rules.lots??10} units</div></div><div class="paper-meta-item"><div class="paper-meta-label">Trigger</div><div class="paper-meta-value">${triggerText}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium target</div><div class="paper-meta-value">+${rules.targetPoints??2} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium stop</div><div class="paper-meta-value">−${rules.stopLossPoints??5} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Time / cooldown</div><div class="paper-meta-value">${fmtSeconds(rules.maxAliveSeconds)} / ${fmtSeconds(rules.cooldownSeconds)}</div></div></div><section class="paper-section paper-live-section" aria-label="Live simulated positions"><div class="paper-section-head"><div><div class="paper-section-title">Live simulated positions</div><div class="paper-section-sub">Current option premium and paper-only lifecycle status</div></div><span class="paper-section-count">${opened.length} open</span></div><div class="paper-records">${positions}</div></section><section class="paper-section paper-history-section" aria-label="Closed simulated trade history"><div class="paper-section-head"><div><div class="paper-section-title">Closed trade history</div><div class="paper-section-sub">Most recent completed paper records first</div></div><span class="paper-section-count">${closed.length} closed</span></div><div class="paper-records">${history}</div></section>`;
+  container.innerHTML=`<div class="paper-head"><div class="paper-kicker">PAPER ONLY · NO REAL ORDER</div><div class="paper-title-row"><div class="paper-title">Simulated option-trade records</div><div class="paper-status">${status}<br>${storageNote}</div></div><div class="paper-disclaimer">This is an automated paper simulation, not a broker order and not investment advice. Qualifying upward pressure simulates a Buy Call; qualifying downward pressure simulates a Buy Put. Entry, target, and stop-loss use option premium only.</div></div><section class="paper-pnl-summary" aria-label="Aggregate paper profit and loss"><div class="paper-pnl-head"><div><div class="paper-pnl-title">Overall paper P&L</div><div class="paper-pnl-sub">Closed and currently open paper positions</div></div><span class="paper-pnl-badge">${performance.totalTrades||0} records</span></div><div class="paper-pnl-grid"><div class="paper-pnl-kpi"><div class="k">Net P&L</div><div class="v ${netClass}">${fmtSignedMoney(performance.netMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Realised</div><div class="v ${realisedClass}">${fmtSignedMoney(performance.realisedMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Open P&L</div><div class="v ${openClass}">${fmtSignedMoney(performance.unrealisedMoney)}</div></div></div><div class="paper-pnl-note">Paper rupee P&L = option-premium movement × configured paper lots × contract units per lot. Current configured values: NIFTY ${contractLotSizes.NIFTY??'—'} units/lot · SENSEX ${contractLotSizes.SENSEX??'—'} units/lot. It excludes brokerage, fees, taxes, margin, and slippage. Closed: ${performance.closedTrades||0} · Wins: ${performance.winningClosedTrades||0} · Losses: ${performance.losingClosedTrades||0}.</div></section><div class="paper-meta"><div class="paper-meta-item"><div class="paper-meta-label">Simulator</div><div class="paper-meta-value">${rules.enabled?'Enabled':'Disabled'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Lots per simulation</div><div class="paper-meta-value">${rules.lots??10} lots</div></div><div class="paper-meta-item"><div class="paper-meta-label">NIFTY / SENSEX</div><div class="paper-meta-value">${rules.symbolEnabled?.NIFTY!==false?'On':'Off'} / ${rules.symbolEnabled?.SENSEX!==false?'On':'Off'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Trigger</div><div class="paper-meta-value">${triggerText}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium target</div><div class="paper-meta-value">+${rules.targetPoints??2} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium stop</div><div class="paper-meta-value">−${rules.stopLossPoints??5} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Time / cooldown</div><div class="paper-meta-value">${fmtSeconds(rules.maxAliveSeconds)} / ${fmtSeconds(rules.cooldownSeconds)}</div></div></div><section class="paper-section paper-live-section" aria-label="Live simulated positions"><div class="paper-section-head"><div><div class="paper-section-title">Live simulated positions</div><div class="paper-section-sub">Current option premium and paper-only lifecycle status</div></div><span class="paper-section-count">${opened.length} open</span></div><div class="paper-records">${positions}</div></section><section class="paper-section paper-history-section" aria-label="Closed simulated trade history"><div class="paper-section-head"><div><div class="paper-section-title">Closed trade history</div><div class="paper-section-sub">Most recent completed paper records first</div></div><span class="paper-section-count">${closed.length} closed</span></div><div class="paper-records">${history}</div></section>`;
 }
 
 function renderPaperControls(){
@@ -641,16 +651,18 @@ function renderPaperControls(){
   const storage=paperTradeState?.storage||{};
   const editable=storage.mode==='postgres' && storage.status==='ready';
   $('paperEnabled').checked=rules.enabled===true;
+  $('paperNiftyEnabled').checked=rules.symbolEnabled?.NIFTY!==false;
+  $('paperSensexEnabled').checked=rules.symbolEnabled?.SENSEX!==false;
   $('paperLots').value=String(rules.lots===20?20:10);
   $('paperTrigger').value=rules.triggerLevel==='mild'?'mild':'strong';
   $('paperTarget').value=String(rules.targetPoints??2);
   $('paperStop').value=String(rules.stopLossPoints??5);
   $('paperAlive').value=String(rules.maxAliveSeconds??0);
   $('paperCooldown').value=String(rules.cooldownSeconds??0);
-  document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
+  document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperEnabled, #paperNiftyEnabled, #paperSensexEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
   const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open').length;
   $('paperEnabledNote').textContent=!editable?'Durable PostgreSQL storage is required for controls.':rules.enabled?'Enabled · qualifying signals may create simulated records.':'Disabled · new simulated entries are blocked.';
-  $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${openCount} simulated trade${openCount===1?'':'s'} open. Target, stop, lifetime, and cooldown are locked into each trade at entry.`;
+  $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${openCount} simulated trade${openCount===1?'':'s'} open. NIFTY is ${rules.symbolEnabled?.NIFTY!==false?'enabled':'disabled'}; SENSEX is ${rules.symbolEnabled?.SENSEX!==false?'enabled':'disabled'}. Disabling one symbol closes only that symbol’s open paper position.`;
 }
 
 function setView(view){
@@ -1023,6 +1035,7 @@ async function savePaperControls({switchChanged=false}={}){
   const next={
     enabled:$('paperEnabled').checked,
     lots:Number($('paperLots').value),
+    symbolEnabled:{NIFTY:$('paperNiftyEnabled').checked,SENSEX:$('paperSensexEnabled').checked},
     triggerLevel:$('paperTrigger').value,
     targetPoints:Number($('paperTarget').value),
     stopLossPoints:Number($('paperStop').value),
@@ -1033,6 +1046,14 @@ async function savePaperControls({switchChanged=false}={}){
     const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open').length;
     const accepted=window.confirm(`Disable paper trading? ${openCount} open simulated trade${openCount===1?'':'s'} will close now at its last observed option premium. No real order is involved.`);
     if (!accepted){ $('paperEnabled').checked=true; return; }
+  }else if (next.enabled){
+    const previous=paperTradeState?.rules?.symbolEnabled||{};
+    const disabledSymbols=['NIFTY','SENSEX'].filter(name=>previous[name]!==false && next.symbolEnabled[name]===false);
+    if (disabledSymbols.length){
+      const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open' && disabledSymbols.includes(trade.symbol)).length;
+      const accepted=window.confirm(`Disable ${disabledSymbols.join(' and ')} paper trading? ${openCount} affected open simulated trade${openCount===1?'':'s'} will close now at the last observed option premium. The other symbol remains unchanged; no real order is involved.`);
+      if (!accepted){ renderPaperControls(); return; }
+    }
   }
   const button=$('paperSaveBtn');
   button.disabled=true; button.textContent=switchChanged?'Updating…':'Applying…';
@@ -1052,6 +1073,8 @@ async function savePaperControls({switchChanged=false}={}){
 }
 $('paperSaveBtn').onclick=()=>savePaperControls();
 $('paperEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
+$('paperNiftyEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
+$('paperSensexEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 
 connect();
 </script>
