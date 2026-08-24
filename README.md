@@ -22,12 +22,15 @@ strikes above and below it. Each strike shows separate **Call OI (CE)**,
 aggregate call, put, and total change across the full ATM ±3 band.
 
 The windows are calculated from snapshots collected by the backend, not from
-Dhan's `previous_oi` field. The 5-minute card becomes available after at least
-5 minutes of history, the 30-minute card after at least 30 minutes, and the
-3-hour card after at least 3 hours. This prevents a short warm-up interval
-from being mislabeled as a full time window. With durable history configured,
-the backend restores the retained raw references after a restart instead of
-requiring every window to warm up again.
+Dhan's `previous_oi` field. On a first real snapshot or an explicit reset, all
+three cards immediately compare the current values with that same real market
+baseline, so the displayed deltas begin at zero rather than from invented
+zero-valued OI. Until a full 5-minute, 30-minute, or 3-hour lookback exists,
+the card explicitly identifies this as a current-market baseline comparison.
+Once enough history has elapsed, it automatically uses the exact requested
+time-window reference. With durable history configured, the backend restores
+the retained raw references after a restart instead of requiring every window
+to warm up again.
 
 ## Market strength panel
 
@@ -202,9 +205,12 @@ SENSEX history** controls. A confirmed reset deletes only that symbol's retained
 raw references, clears its chart series, and creates a new baseline from the
 latest real Dhan market snapshot already held by the backend. It never uses a
 zero-valued placeholder and never triggers an extra Dhan Option Chain request.
-After reset, each exact card states that it is collecting from the new baseline
-until its full 5-minute, 30-minute, or 3-hour period has elapsed. The other
-symbol's history is unaffected.
+All three cards immediately compare the current market against that same current
+baseline, so 5-minute, 30-minute, and 3-hour deltas display zero at reset. As
+fresh data arrives, each card shows movement from the real reset baseline until
+its full lookback interval is available, after which it automatically returns to
+the exact 5-minute, 30-minute, or 3-hour reference. The other symbol's history
+is unaffected.
 
 | Storage choice | Restart-safe OI windows | Trade-off |
 |---|---|---|

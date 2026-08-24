@@ -11,12 +11,12 @@ import { secrets, config, notificationsEnabled } from './config.js';
 import { addSubscription, removeSubscription, checkThresholds } from './notifications.js';
 import * as dhanSource from './dataSources/dhan.js';
 import * as nseFreeSource from './dataSources/nseFree.js';
-import { buildMarketStrength } from './marketStrength.js';
 import { appendChartPoint, buildChartPoint } from './chartHistory.js';
 import { DhanLiveFeed } from './dhanLiveFeed.js';
 import { SerializedPollScheduler } from './pollScheduler.js';
 import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
 import { createHistoryStore } from './historyStore.js';
+import { currentBaselineDelta, exactWindowDelta, nearestStrikeIndex, sortedStrikes } from './oiWindows.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
@@ -50,100 +50,13 @@ let liveFeedStatus = { state: config.liveFeedEnabled ? 'waiting' : 'disabled', l
 let liveFeed = null;
 
 
-function sortedStrikes(strikes) {
-  return Object.keys(strikes)
-    .map(Number)
-    .filter(Number.isFinite)
-    .sort((a, b) => a - b);
-}
-
-function nearestStrikeIndex(strikes, price) {
-  const numericPrice = Number(price);
-  if (!Number.isFinite(numericPrice) || !strikes.length) return null;
-
-  let bestIndex = 0;
-  let bestDiff = Math.abs(strikes[0] - numericPrice);
-  for (let i = 1; i < strikes.length; i++) {
-    const diff = Math.abs(strikes[i] - numericPrice);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      bestIndex = i;
-    }
-  }
-  return bestIndex;
-}
-
-function bandStep(strikes) {
-  const steps = [];
-  for (let i = 1; i < strikes.length; i++) steps.push(strikes[i] - strikes[i - 1]);
-  return steps.length && steps.every((step) => step === steps[0]) ? steps[0] : null;
-}
-
-function legOi(leg) {
-  const value = typeof leg === 'object' && leg !== null ? leg.oi : leg;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-// Builds the ATM +/- N strike band for the *current* snapshot, then diffs
-// each of those strikes against the reference snapshot for a given window.
-function bandDelta(hist, nowMs, windowMs) {
-  if (hist.length < 2) return null;
-  const cur = hist[hist.length - 1];
-  const allStrikes = sortedStrikes(cur.strikes);
-  const atmIndex = nearestStrikeIndex(allStrikes, cur.underlyingPrice);
-  if (atmIndex === null) return null;
-  const atm = allStrikes[atmIndex];
-  const targetT = nowMs - windowMs;
-  if (hist[0].t > targetT) return null; // do not label a shorter warm-up span as this window
-
-  let ref = hist[0];
-  for (const snap of hist) {
-    if (snap.t <= targetT) ref = snap;
-    else break;
-  }
-  if (ref.t === cur.t) return null; // not enough history yet for this window
-
-  const band = [];
-  let bandDeltaCe = 0;
-  let bandDeltaPe = 0;
-  let bandDeltaTotal = 0;
-  for (let i = -config.strikesEachSide; i <= config.strikesEachSide; i++) {
-    const strikeIndex = atmIndex + i;
-    if (strikeIndex < 0 || strikeIndex >= allStrikes.length) continue;
-    const strike = allStrikes[strikeIndex];
-    const curLeg = cur.strikes[strike];
-    const refLeg = ref.strikes[strike];
-    if (!curLeg || !refLeg) continue; // skip a strike that was not present in both snapshots
-    const prevLeg = refLeg;
-    const dCe = legOi(curLeg.ce) - legOi(prevLeg.ce);
-    const dPe = legOi(curLeg.pe) - legOi(prevLeg.pe);
-    const dTotal = dCe + dPe;
-    bandDeltaCe += dCe;
-    bandDeltaPe += dPe;
-    bandDeltaTotal += dTotal;
-    band.push({ strike, isATM: i === 0, offset: i, dCe, dPe, dTotal });
-  }
-
-  return {
-    fromT: ref.t,
-    toT: cur.t,
-    actualSpanMs: cur.t - ref.t,
-    atmStrike: atm,
-    strikeStep: bandStep(allStrikes),
-    band,
-    bandDeltaCe,
-    bandDeltaPe,
-    bandDeltaTotal,
-    marketStrength: buildMarketStrength({ cur, ref, band, actualSpanMs: cur.t - ref.t }),
-  };
-}
-
 function computePayload(name) {
   const hist = history[name];
   if (!hist.length) return null;
   const cur = hist[hist.length - 1];
-  const baseline = hist[0];
+  const baseline = hist.find((snapshot) => snapshot.resetBaseline === true) || hist[0];
+  const windowFor = (windowMs) => exactWindowDelta(hist, cur.t, windowMs, config.strikesEachSide)
+    || currentBaselineDelta(baseline, cur, windowMs, config.strikesEachSide);
   return {
     symbol: name,
     updatedAt: cur.t,
@@ -151,12 +64,12 @@ function computePayload(name) {
     history: {
       baselineAt: baseline.t,
       collectedMs: Math.max(0, cur.t - baseline.t),
-      source: 'real-market-snapshot',
+      source: baseline.baselineReason || 'initial-real-market-snapshot',
     },
     windows: {
-      m5: bandDelta(hist, cur.t, 5 * 60 * 1000),
-      m30: bandDelta(hist, cur.t, 30 * 60 * 1000),
-      h3: bandDelta(hist, cur.t, 3 * 60 * 60 * 1000),
+      m5: windowFor(5 * 60 * 1000),
+      m30: windowFor(30 * 60 * 1000),
+      h3: windowFor(3 * 60 * 60 * 1000),
     },
   };
 }
@@ -192,7 +105,8 @@ function updatePayload(name, point, nextRestState = null) {
   checkThresholds(name, payload.windows);
 }
 
-function recordSnapshot(name, summary, t, { eventDriven = false, restState: nextRestState = null, persist = true } = {}) {
+function recordSnapshot(name, summary, t, { eventDriven = false, restState: nextRestState = null, persist = true, allowDuringReset = false } = {}) {
+  if (historyResetInFlight.has(name) && !allowDuringReset) return;
   const hist = history[name];
   const previous = hist[hist.length - 1] || null;
   const shouldReplace = eventDriven && previous && t - previous.t < config.liveFeedEventBucketMs;
@@ -316,7 +230,7 @@ async function pollSymbol(sym) {
     } else {
       // First snapshot and every degraded/live-feed-reconnect period retain the
       // existing REST fallback rather than leaving the dashboard empty.
-      recordSnapshot(sym.name, liveState[sym.name], t, { restState: 'live' });
+      recordSnapshot(sym.name, { ...liveState[sym.name], resetBaseline: !hasRetainedHistory, baselineReason: 'initial-real-market-snapshot' }, t, { restState: 'live' });
     }
     return { retryAfterMs: 0 };
   } catch (err) {
@@ -353,8 +267,10 @@ async function resetSymbolHistory(name) {
     chartHistory[name].length = 0;
 
     // The reset baseline is an actual Dhan snapshot already held by this
-    // process. It never manufactures zero OI or zero underlying values.
-    recordSnapshot(name, summary, Date.now(), { restState: restState[name], persist: false });
+    // process. It never manufactures zero OI or zero underlying values. The
+    // marker is retained in Postgres so all cards remain immediately usable
+    // after a restart until their exact lookback intervals have elapsed.
+    recordSnapshot(name, { ...summary, resetBaseline: true, baselineReason: 'reset-real-market-snapshot' }, Date.now(), { restState: restState[name], persist: false, allowDuringReset: true });
     const baseline = history[name][history[name].length - 1];
     await historyStore.save(name, baseline);
     return latest[name];

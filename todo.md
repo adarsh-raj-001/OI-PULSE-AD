@@ -37,7 +37,10 @@
 - [x] Remove the permanent blue loading indicator and excess chart header divider.
 - [x] Investigate why the deployed dashboard reports insufficient 30-minute and 3-hour OI history while a 5-minute window is available.
 - [x] Persist raw OI snapshots across Render restarts and recover exact 5-minute, 30-minute, and 3-hour calculations without inventing missing data.
-- [ ] Validate durable-history recovery and publish the reviewed persistence improvement through a pull request.
+- [x] Validate durable-history recovery and publish the reviewed persistence improvement through a pull request.
 - [x] Seed new and reset OI histories from the latest real Dhan snapshot so delta baselines never begin at zero-valued placeholders.
 - [x] Add separate Reset NIFTY history and Reset SENSEX history controls that independently clear saved references and begin fresh zero-delta collection periods.
 - [x] Validate reset behavior with persisted history and exact 5m/30m/3h availability semantics.
+- [x] Change per-symbol reset behavior to immediately use the current real snapshot as the 5m, 30m, and 3h reference so all three deltas display zero without a collection wait.
+- [x] Validate immediate reset-time zero deltas and the transition to subsequent live updates.
+- [ ] Publish the corrected immediate reset semantics through a pull request.

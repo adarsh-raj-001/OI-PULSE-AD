@@ -54,6 +54,7 @@ const compact = compactHistorySummary(summary);
 assert.equal(compact.strikes[24250].ce.oi, 200);
 assert.equal('securityId' in compact.strikes[24250].ce, false);
 assert.equal('topBidQuantity' in compact.strikes[24250].ce, false);
+assert.equal(compact.resetBaseline, false);
 
 const pool = new MemoryPgPool();
 let now = 20_000;
@@ -81,8 +82,11 @@ assert.deepEqual(restartedStore.getStatus(), { mode: 'postgres', status: 'ready'
 // market's independent 5m/30m/3h collection untouched.
 assert.equal(await store.save('SENSEX', { t: 28_000, ...summary }), true);
 assert.equal(await store.reset('NIFTY'), true);
+assert.equal(await store.save('NIFTY', { t: 28_000, ...summary, resetBaseline: true, baselineReason: 'reset-real-market-snapshot' }), true);
 restored = await restartedStore.load(['NIFTY', 'SENSEX']);
-assert.deepEqual(restored.NIFTY, []);
+assert.equal(restored.NIFTY.length, 1);
+assert.equal(restored.NIFTY[0].resetBaseline, true, 'a restarted process must retain the immediate reset baseline marker');
+assert.equal(restored.NIFTY[0].baselineReason, 'reset-real-market-snapshot');
 assert.deepEqual(restored.SENSEX.map((snapshot) => snapshot.t), [28_000]);
 
 console.log('history store tests passed');

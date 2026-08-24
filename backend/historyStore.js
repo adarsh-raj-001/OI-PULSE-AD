@@ -28,6 +28,10 @@ export function compactHistorySummary(summary) {
   return {
     underlyingPrice: finiteOrNull(summary?.underlyingPrice),
     expiry: typeof summary?.expiry === 'string' ? summary.expiry : null,
+    // Retain the explicit real-market baseline marker so a restart can keep
+    // immediate reset-time deltas instead of reverting the cards to a wait.
+    resetBaseline: summary?.resetBaseline === true,
+    baselineReason: typeof summary?.baselineReason === 'string' ? summary.baselineReason : null,
     strikes,
   };
 }
