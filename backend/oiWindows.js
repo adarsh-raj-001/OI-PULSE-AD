@@ -30,8 +30,9 @@ export function bandStep(strikes) {
 
 function legOi(leg) {
   const value = typeof leg === 'object' && leg !== null ? leg.oi : leg;
+  if (value === null || value === undefined || value === '') return null;
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : 0;
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, referenceMode, provisional }) {
@@ -52,8 +53,16 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
     const curLeg = cur.strikes[strike];
     const refLeg = ref.strikes[strike];
     if (!curLeg || !refLeg) continue;
-    const dCe = legOi(curLeg.ce) - legOi(refLeg.ce);
-    const dPe = legOi(curLeg.pe) - legOi(refLeg.pe);
+    const curCe = legOi(curLeg.ce);
+    const refCe = legOi(refLeg.ce);
+    const curPe = legOi(curLeg.pe);
+    const refPe = legOi(refLeg.pe);
+    // Display only strikes whose Call and Put OI are real values on both
+    // sides of the comparison. This keeps Total exactly equal to Call + Put
+    // and avoids treating an absent Dhan field as a literal zero OI value.
+    if (![curCe, refCe, curPe, refPe].every(Number.isFinite)) continue;
+    const dCe = curCe - refCe;
+    const dPe = curPe - refPe;
     const dTotal = dCe + dPe;
     bandDeltaCe += dCe;
     bandDeltaPe += dPe;

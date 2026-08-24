@@ -55,6 +55,7 @@ assert.equal(compact.strikes[24250].ce.oi, 200);
 assert.equal('securityId' in compact.strikes[24250].ce, false);
 assert.equal('topBidQuantity' in compact.strikes[24250].ce, false);
 assert.equal(compact.resetBaseline, false);
+assert.equal(compactHistorySummary({ strikes: { 24250: { ce: { oi: null }, pe: {} } } }).strikes[24250].ce.oi, null, 'unavailable OI must remain unavailable rather than becoming a stored zero');
 
 const pool = new MemoryPgPool();
 let now = 20_000;

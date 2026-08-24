@@ -5,13 +5,16 @@
 import { Pool } from 'pg';
 
 function finiteOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 }
 
 function compactLeg(leg) {
   return {
-    oi: finiteOrNull(leg?.oi) ?? 0,
+    // Preserve unavailable OI as null. Persisting a missing source value as
+    // zero would turn a future comparison into an artificial positive delta.
+    oi: finiteOrNull(leg?.oi),
     lastPrice: finiteOrNull(leg?.lastPrice),
   };
 }
