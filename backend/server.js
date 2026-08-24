@@ -13,6 +13,7 @@ import * as dhanSource from './dataSources/dhan.js';
 import * as nseFreeSource from './dataSources/nseFree.js';
 import { appendChartPoint, buildChartPoint } from './chartHistory.js';
 import { DhanLiveFeed } from './dhanLiveFeed.js';
+import { resolveMarketSession } from './marketSession.js';
 import { SerializedPollScheduler } from './pollScheduler.js';
 import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
 import { createHistoryStore } from './historyStore.js';
@@ -46,6 +47,10 @@ const paperTrading = createPaperTradeEngine({
     broadcastPaperTrades();
     refreshLiveSubscriptions();
   },
+});
+let marketSessionState = resolveMarketSession({
+  ...config.paperTrading.marketSession,
+  enabled: config.paperTrading.marketHoursEnabled,
 });
 
 // symbol -> compact 10-hour near-ATM chart points. These are separate from
@@ -122,8 +127,9 @@ function updatePayload(name, point, nextRestState = null) {
     liveFeedStatus,
     freshnessMs: config.liveFeedFreshnessMs,
   });
-  payload.status = dataStatus.status;
-  payload.dataStatus = dataStatus;
+  payload.status = marketSessionState.active ? dataStatus.status : 'paused';
+  payload.dataStatus = marketSessionState.active ? dataStatus : { status: 'paused', source: 'market-session', restState: restState[name] };
+  payload.marketSession = { ...marketSessionState };
   payload.chart = chartMeta(name, point);
   payload.liveFeed = { ...liveFeedStatus };
   latest[name] = payload;
@@ -183,6 +189,12 @@ function activeBandSubscriptions(sym, summary) {
 
 function refreshLiveSubscriptions() {
   if (!liveFeed) return;
+  if (!marketSessionState.active) {
+    liveInstrumentRefs.clear();
+    liveFeed.setSubscriptions([]);
+    liveFeed.stop();
+    return;
+  }
   const subscriptions = [];
   liveInstrumentRefs.clear();
   const addLiveSubscription = (instrument) => {
@@ -217,6 +229,7 @@ function refreshLiveSubscriptions() {
 }
 
 function applyLivePacket(packet) {
+  if (!marketSessionState.active) return;
   const ref = liveInstrumentRefs.get(`${packet.exchangeSegment}:${packet.securityId}`);
   if (!ref) return;
   const summary = liveState[ref.symbol];
@@ -260,6 +273,8 @@ if (config.liveFeedEnabled) {
 const pollInFlight = new Set();
 
 async function pollSymbol(sym) {
+  await syncMarketSession();
+  if (!marketSessionState.active) return { retryAfterMs: 30_000 };
   if (pollInFlight.has(sym.name)) return;
   pollInFlight.add(sym.name);
   try {
@@ -341,6 +356,28 @@ function pollLoop() {
   scheduler.start();
 }
 
+async function syncMarketSession(timestamp = Date.now(), force = false) {
+  const rules = paperTrading.snapshot().rules;
+  const next = resolveMarketSession({
+    ...config.paperTrading.marketSession,
+    enabled: rules.marketHoursEnabled,
+    timestamp,
+  });
+  const changed = next.active !== marketSessionState.active
+    || next.enabled !== marketSessionState.enabled
+    || next.reason !== marketSessionState.reason;
+  marketSessionState = next;
+  if (!changed && !force) return next;
+  await paperTrading.setMarketSession(next);
+  refreshLiveSubscriptions();
+  for (const name of Object.keys(latest)) {
+    if (latest[name]) updatePayload(name, chartHistory[name][chartHistory[name].length - 1]);
+  }
+  broadcast();
+  broadcastPaperTrades();
+  return next;
+}
+
 // ---- HTTP layer ----
 const app = express();
 app.use(cors({ origin: config.allowedOrigin }));
@@ -362,6 +399,7 @@ app.get('/api/config', (_req, res) => {
     },
     historyStorage: historyStore.getStatus(),
     paperTrading: paperTrading.snapshot(),
+    marketSession: { ...marketSessionState },
     liveFeed: { enabled: config.liveFeedEnabled, ...liveFeedStatus },
     thresholds: config.thresholds,
     notificationsEnabled,
@@ -383,9 +421,10 @@ app.get('/api/paper-trades', (_req, res) => {
 // a broker/order API.
 app.post('/api/paper-trading/settings', async (req, res) => {
   try {
-    const state = await paperTrading.updateSettings(req.body || {}, Date.now());
+    await paperTrading.updateSettings(req.body || {}, Date.now());
+    await syncMarketSession(Date.now());
     refreshLiveSubscriptions();
-    res.json(state);
+    res.json(paperTrading.snapshot());
   } catch (err) {
     res.status(err.statusCode || 400).json({ error: err.message || 'Could not update paper simulator settings.' });
   }
@@ -464,6 +503,7 @@ setInterval(broadcast, config.ssePushIntervalMs);
 // Dhan Option Chain nor place any broker order; a closed trade uses its last
 // observed option premium if no newer quote arrived at the exact deadline.
 const paperExpiryTimer = setInterval(() => { void paperTrading.expire(Date.now()); }, 250);
+const marketSessionTimer = setInterval(() => { void syncMarketSession(); }, 10_000);
 
 // ---- Keep-alive self-ping (Render's free tier spins a service down after
 // ~15 min with no inbound HTTP traffic). While the process is already
@@ -479,6 +519,7 @@ const selfPingDisabled = process.env.DISABLE_SELF_PING === 'true';
 if (selfUrl && !selfPingDisabled) {
   const KEEPALIVE_MS = 60 * 1000; // comfortably under the 15 min idle timeout
   const selfPing = () => {
+    if (!marketSessionState.active) return;
     fetch(`${selfUrl.replace(/\/$/, '')}/api/health`).catch((err) => {
       console.error('[keepalive] self-ping failed:', err.message);
     });
@@ -503,6 +544,7 @@ async function restoreHistory() {
 
 async function restorePaperTrades() {
   const state = await paperTrading.restore();
+  await syncMarketSession(Date.now(), true);
   console.log(`Paper simulator: ${state.enabled ? 'enabled with durable Postgres records' : 'disabled (configure OI_HISTORY_DATABASE_URL for durable records)'}`);
 }
 
@@ -518,6 +560,7 @@ async function start() {
     console.log(`Dhan live feed: ${config.liveFeedEnabled ? 'enabled (active ATM-band Full Packet stream)' : 'disabled (REST Option Chain only)'}`);
     console.log(`Durable OI history: ${config.historyDatabaseUrl ? 'Postgres configured' : 'memory only (set OI_HISTORY_DATABASE_URL)'}`);
     console.log(`Paper simulator: ${config.paperTrading.enabled ? 'paper-only; no broker/order integration' : 'disabled in config'}`);
+    console.log(`Automatic market-hours pause: ${marketSessionState.enabled ? `${marketSessionState.opensAt}–${marketSessionState.closesAt} ${marketSessionState.timeZone}` : 'manual override enabled'}`);
     console.log(`Self-ping keepalive: ${selfUrl && !selfPingDisabled ? `enabled (${selfUrl})` : 'disabled (set SELF_PING_URL or use Render)'}`);
     pollLoop();
   });
@@ -526,6 +569,7 @@ async function start() {
 async function shutdown(signal) {
   console.log(`${signal} received; flushing durable OI history`);
   clearInterval(paperExpiryTimer);
+  clearInterval(marketSessionTimer);
   await historyStore.close();
   await paperTradeStore.close();
   process.exit(0);

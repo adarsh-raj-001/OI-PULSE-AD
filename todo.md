@@ -82,3 +82,10 @@
 - [x] Add persistent independent NIFTY and SENSEX enable/disable controls that block new entries only for the disabled symbol.
 - [x] Validate per-symbol disable behavior, lot-multiplier P&L, durable settings recovery, and frontend/docs parity.
 - [x] Publish the reviewed lot-based P&L and per-symbol-control improvement through a pull request.
+- [x] Merge approved PR #14 into main and verify the live lot-based paper P&L and independent symbol controls.
+- [x] Inspect and define a durable India-market session gate that pauses OI polling, live subscriptions, and new paper entries outside 09:15–15:30 when enabled.
+- [x] Add a manually configurable automatic market-hours switch with a visible backend and paper-trading status.
+- [x] Replace paper trigger labels with a numeric 1–100 strength threshold and replace the 10/20 lots dropdown with a positive numeric lots field.
+- [x] Add a configurable premium offset that creates transparent pending paper limit entries and fills only on a fresh live option LTP at or better than the requested level.
+- [x] Validate session gating, persistent settings, numeric validation, pending/fill/expiry behavior, global Dhan request safeguards, and frontend/docs parity.
+- [x] Publish the reviewed market-hours and numeric paper-entry controls through a pull request.
