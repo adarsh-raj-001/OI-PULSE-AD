@@ -5,6 +5,7 @@
 
 import { authenticator } from 'otplib';
 import { config, secrets } from '../config.js';
+import { normalizeLeg } from './dhanNormalization.js';
 
 const DHAN_BASE = 'https://api.dhan.co/v2';
 const AUTH_URL = 'https://auth.dhan.co/app/generateAccessToken';
@@ -23,34 +24,6 @@ function dhanError(message, response) {
   error.status = response?.status;
   if (response?.status === 429) error.retryAfterMs = config.optionChainRateLimitBackoffMs;
   return error;
-}
-
-function numericOrNull(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function fieldNumber(fields, ...names) {
-  for (const name of names) {
-    const value = numericOrNull(fields?.[name]);
-    if (value !== null) return value;
-  }
-  return null;
-}
-
-function normalizeLeg(leg) {
-  return {
-    securityId: fieldNumber(leg, 'security_id', 'securityId'),
-    oi: fieldNumber(leg, 'oi') ?? 0,
-    previousOi: fieldNumber(leg, 'previous_oi', 'previousOi'),
-    lastPrice: fieldNumber(leg, 'last_price', 'lastPrice'),
-    volume: fieldNumber(leg, 'volume'),
-    impliedVolatility: fieldNumber(leg, 'implied_volatility', 'impliedVolatility'),
-    topBidPrice: fieldNumber(leg, 'top_bid_price', 'topBidPrice'),
-    topBidQuantity: fieldNumber(leg, 'top_bid_quantity', 'topBidQuantity'),
-    topAskPrice: fieldNumber(leg, 'top_ask_price', 'topAskPrice'),
-    topAskQuantity: fieldNumber(leg, 'top_ask_quantity', 'topAskQuantity'),
-  };
 }
 
 function fetchWithTimeout(url, options = {}) {
