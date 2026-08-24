@@ -40,9 +40,11 @@ assert.match(html, /payload\.status==='connecting'\s*\?\s*'connecting'/);
 assert.match(html, /Reset NIFTY history/);
 assert.match(html, /Reset SENSEX history/);
 assert.match(html, /\/api\/history\//);
-assert.match(html, /Collecting from \$\{baseline\}/);
+assert.match(html, /Current market baseline/);
+assert.match(html, /referenceMode==='current-market-baseline'/);
 assert.match(server, /app\.post\('\/api\/history\/:symbol\/reset'/);
 assert.match(server, /historyStore\.reset\(name\)/);
+assert.match(server, /resetBaseline: true/);
 assert.equal(docsHtml, html, 'GitHub Pages dashboard copy must stay synchronized with the frontend source');
 
 console.log('frontend connection, aggregate, and chart contracts passed');
