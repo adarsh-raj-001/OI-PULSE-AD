@@ -135,6 +135,17 @@ export function createPaperTradeStore({ databaseUrl, pool = null, logger = conso
     });
   }
 
+  function clearSessionHistory() {
+    if (!client || !initialized) return Promise.resolve(false);
+    return enqueue(async () => {
+      await client.query('DELETE FROM oi_pulse_paper_trades');
+      await client.query('DELETE FROM oi_pulse_paper_trade_signals');
+      status = 'ready';
+      lastError = null;
+      return true;
+    });
+  }
+
   async function close() {
     await queued;
     if (client && !pool) await client.end();
@@ -146,6 +157,7 @@ export function createPaperTradeStore({ databaseUrl, pool = null, logger = conso
     saveTrade,
     saveSignalState,
     saveSettings,
+    clearSessionHistory,
     close,
     getStatus: () => ({ mode: client ? 'postgres' : 'disabled', status, lastError }),
     isReady: () => initialized && status === 'ready',

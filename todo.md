@@ -93,3 +93,9 @@
 - [x] Add and validate a minimal weekday 09:15 India-market wake mechanism so an overnight-sleeping Render service can resume the enabled market session automatically.
 - [x] Publish the reviewed market-open wake mechanism through a pull request.
 - [x] Implement the confirmed Option A weekday 09:15 Asia/Kolkata health wake using a minimal secret-free repository workflow.
+- [x] Merge approved PR #16 into main and verify the weekday market-open wake workflow is present in the merged repository.
+- [x] Inspect existing durable OI/chart and paper-trade reset paths and define a once-per-session 09:15 Asia/Kolkata full reset.
+- [x] Add an explicit persisted full-session-reset setting that clears OI baselines/chart history and paper-trading records at the session start.
+- [x] Ensure open or pending paper entries are closed/cancelled with an auditable session-reset reason before records are cleared.
+- [x] Validate reset idempotency, session-time behavior, PostgreSQL persistence, request safeguards, and dashboard status.
+- [ ] Publish the reviewed full-session-reset behavior through a pull request.

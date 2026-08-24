@@ -5,6 +5,9 @@ function partsAt(timestamp, timeZone = TIME_ZONE) {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone,
     weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
@@ -45,5 +48,7 @@ export function resolveMarketSession({ enabled, opensAt = '09:15', closesAt = '1
     closesAt,
     localWeekday: local.weekday,
     localTime: `${local.hour}:${local.minute}`,
+    localDate: `${local.year}-${local.month}-${local.day}`,
+    regularSessionActive: isWithinHours,
   };
 }
