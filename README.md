@@ -217,6 +217,37 @@ its full lookback interval is available, after which it automatically returns to
 the exact 5-minute, 30-minute, or 3-hour reference. The other symbol's history
 is unaffected.
 
+### Paper-only option simulator
+
+The dashboard includes a separate **Paper trades** view. This feature is a
+server-side record-keeping simulation only: it does **not** connect to a broker,
+does **not** receive or store any order credentials, and does **not** submit a
+real-money or exchange order. It is a mechanical display of configured rules,
+not investment advice or a prediction.
+
+| Completed exact-window condition | Simulated record | Entry and lifecycle |
+|---|---|---|
+| `Strong upward pressure` | Buy Call at the current ATM CE premium | 10 lots; target = entry premium + 2 points; stop-loss = entry premium − 5 points. |
+| `Strong downward pressure` | Buy Put at the current ATM PE premium | 10 lots; target = entry premium + 2 points; stop-loss = entry premium − 5 points. |
+| A reset/start baseline or a non-strong label | No record | Provisional current-market baseline comparisons never qualify. |
+
+The simulator examines completed 5-minute, 30-minute, and 3-hour windows in
+that order and uses the first qualifying strong label. It permits **one open
+paper trade per symbol** during a continuous same-direction signal. Once
+closed, a new record for that symbol requires the signal to leave the qualifying
+state and enter again, preventing duplicate entries on every live update.
+Target and stop-loss checks use the original option contract's observed LTP,
+even after the ATM strike moves.
+
+Paper-trade records share the configured `OI_HISTORY_DATABASE_URL` PostgreSQL
+database but use a separate `oi_pulse_paper_trades` table. The server also
+persists the continuous-signal guard, so a restart does not manufacture a
+duplicate record. Without this database URL, the paper simulator explicitly
+remains unavailable rather than claiming that order records are durable. The
+records view reports **premium points** only. It intentionally does not claim
+rupee P&L because an accurate currency calculation also needs the applicable
+exchange contract lot multiplier for the specific instrument.
+
 | Storage choice | Restart-safe OI windows | Trade-off |
 |---|---|---|
 | No database URL | No; history is only available while this backend process remains alive. | Zero setup, but each restart requires warm-up. |

@@ -45,6 +45,15 @@ assert.match(html, /referenceMode==='current-market-baseline'/);
 assert.match(server, /app\.post\('\/api\/history\/:symbol\/reset'/);
 assert.match(server, /historyStore\.reset\(name\)/);
 assert.match(server, /resetBaseline: true/);
+assert.match(html, /data-view-target="live"/);
+assert.match(html, /data-view-target="paper"/);
+assert.match(html, /PAPER ONLY · NO REAL ORDER/);
+assert.match(html, /\/api\/paper-trades/);
+assert.match(html, /stream\.addEventListener\('paper-trades'/);
+assert.match(server, /app\.get\('\/api\/paper-trades'/);
+assert.match(server, /event: paper-trades/);
+assert.match(server, /createPaperTradeEngine/);
+assert.doesNotMatch(server, /placeOrder|place_order|order-management|broker order endpoint/i, 'paper simulation must have no broker order integration');
 assert.equal(docsHtml, html, 'GitHub Pages dashboard copy must stay synchronized with the frontend source');
 
 console.log('frontend connection, aggregate, and chart contracts passed');

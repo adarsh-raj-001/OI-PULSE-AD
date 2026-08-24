@@ -16,6 +16,8 @@ import { DhanLiveFeed } from './dhanLiveFeed.js';
 import { SerializedPollScheduler } from './pollScheduler.js';
 import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
 import { createHistoryStore } from './historyStore.js';
+import { createPaperTradeStore } from './paperTradeStore.js';
+import { createPaperTradeEngine } from './paperTrading.js';
 import { currentBaselineDelta, exactWindowDelta, nearestStrikeIndex, sortedStrikes } from './oiWindows.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
@@ -31,6 +33,15 @@ const historyStore = createHistoryStore({
   databaseUrl: config.historyDatabaseUrl,
   historyMaxMs: config.historyMaxMs,
   persistIntervalMs: config.historyPersistIntervalMs,
+});
+
+// The paper simulator has no broker credentials and no order endpoint. It uses
+// only the already-received Dhan market summary and a separate durable table.
+const paperTradeStore = createPaperTradeStore({ databaseUrl: config.historyDatabaseUrl });
+const paperTrading = createPaperTradeEngine({
+  store: paperTradeStore,
+  rules: config.paperTrading,
+  onChange: () => broadcastPaperTrades(),
 });
 
 // symbol -> compact 10-hour near-ATM chart points. These are separate from
@@ -128,6 +139,9 @@ function recordSnapshot(name, summary, t, { eventDriven = false, restState: next
   const chartPoint = buildChartPoint(snapshot, previousChartPoint, config.strikesEachSide);
   appendChartPoint(points, chartPoint, t - config.chartHistoryMaxMs, eventDriven ? config.liveFeedEventBucketMs : 0);
   updatePayload(name, chartPoint, nextRestState);
+  // The simulator consumes the current summary only. It never initiates a Dhan
+  // REST request, and its engine ignores reset/start provisional windows.
+  void paperTrading.process(name, latest[name], summary, t);
 }
 
 function activeBandSubscriptions(sym, summary) {
@@ -157,14 +171,32 @@ function refreshLiveSubscriptions() {
   if (!liveFeed) return;
   const subscriptions = [];
   liveInstrumentRefs.clear();
+  const addLiveSubscription = (instrument) => {
+    const key = `${instrument.exchangeSegment}:${instrument.securityId}`;
+    if (liveInstrumentRefs.has(key)) return;
+    liveInstrumentRefs.set(key, instrument);
+    subscriptions.push(instrument);
+  };
   for (const sym of config.symbols) {
     const summary = liveState[sym.name];
     if (!summary || !sym.dhan) continue;
     for (const instrument of activeBandSubscriptions(sym, summary)) {
-      const key = `${instrument.exchangeSegment}:${instrument.securityId}`;
-      liveInstrumentRefs.set(key, instrument);
-      subscriptions.push(instrument);
+      addLiveSubscription(instrument);
     }
+    // Retain the original option subscription until its simulated position is
+    // closed, even if ATM moves. Target/stop evaluation remains option-LTP based.
+    const openTrade = paperTrading.activeTrade(sym.name);
+    if (!openTrade || !Number.isFinite(openTrade.securityId)) continue;
+    const optionSegment = sym.name === 'SENSEX' ? 'BSE_FNO' : 'NSE_FNO';
+    addLiveSubscription({
+      exchangeSegment: optionSegment,
+      securityId: openTrade.securityId,
+      symbol: sym.name,
+      kind: 'option',
+      strike: openTrade.strike,
+      side: openTrade.optionSide,
+      paperTracking: true,
+    });
   }
   liveFeed.setSubscriptions(subscriptions);
   liveFeed.start();
@@ -311,6 +343,7 @@ app.get('/api/config', (_req, res) => {
       retentionMs: config.chartHistoryMaxMs,
     },
     historyStorage: historyStore.getStatus(),
+    paperTrading: paperTrading.snapshot(),
     liveFeed: { enabled: config.liveFeedEnabled, ...liveFeedStatus },
     thresholds: config.thresholds,
     notificationsEnabled,
@@ -321,6 +354,10 @@ app.get('/api/oi/:symbol', (req, res) => {
   const name = req.params.symbol.toUpperCase();
   if (!latest[name]) return res.status(404).json({ error: 'unknown symbol' });
   res.json(latest[name]);
+});
+
+app.get('/api/paper-trades', (_req, res) => {
+  res.json(paperTrading.snapshot());
 });
 
 // Full retained history is requested once after connection or a symbol change.
@@ -378,12 +415,18 @@ app.get('/api/stream', (req, res) => {
   res.flushHeaders();
   sseClients.add(res);
   res.write(`data: ${JSON.stringify(latest)}\n\n`);
+  res.write(`event: paper-trades\ndata: ${JSON.stringify(paperTrading.snapshot())}\n\n`);
   req.on('close', () => sseClients.delete(res));
 });
 
 function broadcast() {
   const payload = JSON.stringify(latest);
   for (const client of sseClients) client.write(`data: ${payload}\n\n`);
+}
+
+function broadcastPaperTrades() {
+  const payload = JSON.stringify(paperTrading.snapshot());
+  for (const client of sseClients) client.write(`event: paper-trades\ndata: ${payload}\n\n`);
 }
 setInterval(broadcast, config.ssePushIntervalMs);
 
@@ -423,9 +466,15 @@ async function restoreHistory() {
   console.log(`Durable OI history: ${historyStore.getStatus().status} (${count} snapshots restored)`);
 }
 
+async function restorePaperTrades() {
+  const state = await paperTrading.restore();
+  console.log(`Paper simulator: ${state.enabled ? 'enabled with durable Postgres records' : 'disabled (configure OI_HISTORY_DATABASE_URL for durable records)'}`);
+}
+
 async function start() {
   await historyStore.initialize();
   await restoreHistory();
+  await restorePaperTrades();
   app.listen(config.port, () => {
     console.log(`OI Pulse backend listening on :${config.port}`);
     console.log(`Data source: ${source.label}`);
@@ -433,6 +482,7 @@ async function start() {
     console.log(`Push notifications: ${notificationsEnabled ? 'enabled' : 'disabled (set VAPID keys in .env)'}`);
     console.log(`Dhan live feed: ${config.liveFeedEnabled ? 'enabled (active ATM-band Full Packet stream)' : 'disabled (REST Option Chain only)'}`);
     console.log(`Durable OI history: ${config.historyDatabaseUrl ? 'Postgres configured' : 'memory only (set OI_HISTORY_DATABASE_URL)'}`);
+    console.log(`Paper simulator: ${config.paperTrading.enabled ? 'paper-only; no broker/order integration' : 'disabled in config'}`);
     console.log(`Self-ping keepalive: ${selfUrl && !selfPingDisabled ? `enabled (${selfUrl})` : 'disabled (set SELF_PING_URL or use Render)'}`);
     pollLoop();
   });
@@ -441,6 +491,7 @@ async function start() {
 async function shutdown(signal) {
   console.log(`${signal} received; flushing durable OI history`);
   await historyStore.close();
+  await paperTradeStore.close();
   process.exit(0);
 }
 
