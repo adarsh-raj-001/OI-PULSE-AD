@@ -36,4 +36,10 @@ assert.equal(exact.provisional, false);
 assert.equal(exact.fromT, fiveMinuteReference.t);
 assert.equal(exact.bandDeltaTotal, 36, 'after five minutes, the card must transition to an exact 5-minute reference');
 
+const incompleteCurrent = structuredClone(afterReset);
+incompleteCurrent.strikes[24250].ce.oi = null;
+const withoutInventedZero = currentBaselineDelta(baseline, incompleteCurrent, 5 * 60_000, 1);
+assert.equal(withoutInventedZero.band.find((row) => row.strike === 24250), undefined, 'a strike with null or missing OI must be excluded, never calculated against a fabricated zero');
+assert.ok(withoutInventedZero.band.every((row) => row.dTotal === row.dCe + row.dPe), 'every displayed Total must remain the arithmetic sum of Call and Put');
+
 console.log('OI window baseline tests passed');
