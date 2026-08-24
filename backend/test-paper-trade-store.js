@@ -5,6 +5,7 @@ class MemoryPgPool {
   constructor() {
     this.trades = new Map();
     this.signals = new Map();
+    this.settings = new Map();
   }
 
   async query(sql, values = []) {
@@ -20,11 +21,20 @@ class MemoryPgPool {
       this.signals.set(symbol, signal);
       return { rows: [] };
     }
+    if (statement.startsWith('INSERT INTO OI_PULSE_PAPER_TRADE_SETTINGS')) {
+      const [key, settingsText, updatedAt] = values;
+      this.settings.set(key, { settings: JSON.parse(settingsText), updated_at: updatedAt });
+      return { rows: [] };
+    }
     if (statement.startsWith('SELECT TRADE ')) {
       return { rows: [...this.trades.values()].sort((a, b) => b.opened_at - a.opened_at).map((row) => ({ trade: row.trade })) };
     }
     if (statement.startsWith('SELECT SYMBOL, SIGNAL ')) {
       return { rows: [...this.signals.entries()].map(([symbol, signal]) => ({ symbol, signal })) };
+    }
+    if (statement.startsWith('SELECT SETTINGS ')) {
+      const row = this.settings.get(values[0]);
+      return { rows: row ? [{ settings: row.settings }] : [] };
     }
     throw new Error(`Unexpected query: ${sql}`);
   }
@@ -36,10 +46,12 @@ assert.equal(await store.initialize(), true);
 const openTrade = {
   id: 'paper-1', symbol: 'NIFTY', status: 'open', openedAt: 1000,
   optionType: 'CALL', optionSide: 'ce', securityId: 101, strike: 24250,
-  lots: 10, entryPrice: 100, targetPrice: 102, stopLossPrice: 95,
+  lots: 20, entryPrice: 100, targetPrice: 103, stopLossPrice: 96, expiresAt: 11000, cooldownSecondsAtEntry: 3,
 };
+const settings = { enabled: true, lots: 20, triggerLevel: 'mild', targetPoints: 3, stopLossPoints: 4, maxAliveSeconds: 10, cooldownSeconds: 3 };
 assert.equal(await store.saveTrade(openTrade), true);
 assert.equal(await store.saveSignalState('NIFTY', 'up', 1000), true);
+assert.equal(await store.saveSettings(settings, 1000), true);
 
 const restarted = createPaperTradeStore({ pool, logger: { error() {} } });
 assert.equal(await restarted.initialize(), true);
@@ -47,12 +59,13 @@ let restored = await restarted.load();
 assert.equal(restored.trades.length, 1);
 assert.equal(restored.trades[0].securityId, 101, 'open contract identity must survive restart recovery');
 assert.deepEqual(restored.signalStates, { NIFTY: 'up' }, 'continuous-signal guard must survive a restart');
+assert.deepEqual(restored.settings, settings, 'screen-edited runtime controls must survive a restart');
 
-const closedTrade = { ...openTrade, status: 'closed', exitPrice: 102, closedAt: 2000, closeReason: 'target', resultPoints: 2 };
+const closedTrade = { ...openTrade, status: 'closed', exitPrice: 101, closedAt: 11000, closeReason: 'time-expired', cooldownUntil: 14000, resultPoints: 1 };
 assert.equal(await store.saveTrade(closedTrade), true);
 restored = await restarted.load();
 assert.equal(restored.trades[0].status, 'closed');
-assert.equal(restored.trades[0].resultPoints, 2);
+assert.equal(restored.trades[0].cooldownUntil, 14000);
 assert.deepEqual(restarted.getStatus(), { mode: 'postgres', status: 'ready', lastError: null });
 
 const disabled = createPaperTradeStore({ logger: { error() {} } });

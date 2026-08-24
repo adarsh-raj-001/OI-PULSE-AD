@@ -156,10 +156,10 @@
 
   .sheet-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:20; align-items:flex-end;}
   .sheet-backdrop.open{display:flex;}
-  .sheet{width:100%; background:var(--surface-alt); border-radius:20px 20px 0 0; padding:20px 18px calc(24px + env(safe-area-inset-bottom)); border-top:1px solid var(--border);}
+  .sheet{width:100%; max-height:calc(100vh - env(safe-area-inset-top)); overflow-y:auto; background:var(--surface-alt); border-radius:20px 20px 0 0; padding:20px 18px calc(24px + env(safe-area-inset-bottom)); border-top:1px solid var(--border);}
   .sheet h2{font-size:15px; margin:0 0 12px;}
   .sheet label{font-size:12px; color:var(--text-dim); display:block; margin-bottom:6px;}
-  .sheet input{width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:11px 12px; font-family:'IBM Plex Mono',monospace; font-size:13px; margin-bottom:14px;}
+  .sheet input,.sheet select{width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:11px 12px; font-family:'IBM Plex Mono',monospace; font-size:13px; margin-bottom:14px;}
   .sheet .row{display:flex; gap:10px;}
   .sheet button.primary{flex:1; background:var(--accent); color:#04211F; border:none; border-radius:10px; padding:12px; font-weight:700; font-size:14px; cursor:pointer;}
   .sheet button.secondary{flex:1; background:none; border:1px solid var(--border); color:var(--text-dim); border-radius:10px; padding:12px; font-size:14px; cursor:pointer;}
@@ -172,6 +172,7 @@
   .history-reset .notif-row{margin-bottom:9px;}
   .history-reset button{background:none; color:var(--warn); border:1px solid rgba(240,185,61,.55);}
   .history-reset button:disabled{opacity:.5; cursor:wait;}
+  .paper-settings{margin:4px 0 16px; border-top:1px solid var(--border); padding-top:14px;}.paper-settings h2{margin-bottom:5px;}.paper-settings-note{font-size:11px; line-height:1.45; color:var(--text-faint); margin:0 0 11px;}.paper-control-grid{display:grid; grid-template-columns:1fr 1fr; gap:0 10px;}.paper-control-grid .full{grid-column:1/-1;}.paper-settings-status{font-family:'IBM Plex Mono',monospace; font-size:10px; line-height:1.45; color:var(--text-faint); padding:10px 11px; border:1px solid var(--border); border-radius:9px; background:var(--surface); margin:-2px 0 11px;}.paper-switch-row{display:flex; justify-content:space-between; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-bottom:12px;}.paper-switch-title{font-size:13px; color:var(--text);}.paper-switch-note{font-size:10.5px; line-height:1.4; color:var(--text-faint); margin-top:3px;}.paper-switch{position:relative; display:inline-flex; flex:0 0 auto; cursor:pointer;}.paper-switch input{position:absolute; opacity:0; width:1px; height:1px; margin:0;}.paper-switch-track{width:43px; height:24px; border-radius:20px; background:#303847; border:1px solid var(--border); transition:.15s;}.paper-switch-track::after{content:''; display:block; width:18px; height:18px; margin:2px; border-radius:50%; background:var(--text-dim); transition:.15s;}.paper-switch input:checked + .paper-switch-track{background:rgba(52,211,153,.28); border-color:rgba(52,211,153,.55);}.paper-switch input:checked + .paper-switch-track::after{transform:translateX(18px); background:var(--rise);}.paper-switch input:disabled + .paper-switch-track{opacity:.45; cursor:not-allowed;}.paper-settings button:disabled{opacity:.5; cursor:not-allowed;}@media (max-width:390px){.paper-control-grid{grid-template-columns:1fr;}.paper-control-grid .full{grid-column:auto;}}
 </style>
 </head>
 <body data-view="live">
@@ -237,6 +238,25 @@
       <button id="notifBtn">Enable</button>
     </div>
 
+    <section class="paper-settings" aria-label="Paper simulator controls">
+      <h2>Paper simulator controls</h2>
+      <p class="paper-settings-note">Paper-only settings apply to future simulated entries. Target, stop, lifetime, and cooldown are recorded at entry, so changing these controls never rewrites an open or closed record. Turning the simulator off closes every open paper trade first at its last observed option premium.</p>
+      <div class="paper-switch-row">
+        <div><div class="paper-switch-title">Paper trading</div><div class="paper-switch-note" id="paperEnabledNote">Loading simulator status…</div></div>
+        <label class="paper-switch" aria-label="Enable paper trading"><input id="paperEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label>
+      </div>
+      <div class="paper-control-grid" id="paperControlFields">
+        <div><label for="paperLots">Lot size</label><select id="paperLots"><option value="10">10 lots</option><option value="20">20 lots</option></select></div>
+        <div><label for="paperTrigger">Trigger point</label><select id="paperTrigger"><option value="strong">Strong pressure</option><option value="mild">Mild or strong</option></select></div>
+        <div><label for="paperTarget">Target · premium points</label><input id="paperTarget" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
+        <div><label for="paperStop">Stop-loss · premium points</label><input id="paperStop" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
+        <div><label for="paperAlive">Maximum alive time · seconds</label><input id="paperAlive" type="number" inputmode="numeric" min="0" max="86400" step="1" /></div>
+        <div><label for="paperCooldown">Cooldown after close · seconds</label><input id="paperCooldown" type="number" inputmode="numeric" min="0" max="86400" step="1" /></div>
+      </div>
+      <div class="paper-settings-status" id="paperSettingsStatus">Awaiting durable paper-simulator state.</div>
+      <button class="primary" id="paperSaveBtn" type="button">Apply paper controls</button>
+    </section>
+
     <section class="history-reset" aria-label="History reset controls">
       <h2>OI history baseline</h2>
       <p class="reset-note">Each reset clears only that market’s saved OI references, then immediately sets all three delta baselines to the latest real Dhan snapshot. The other market is not changed.</p>
@@ -275,7 +295,7 @@ let demoTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let latestData = {};
-let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ lots:10, targetPoints:2, stopLossPoints:5 }, trades:[] };
+let paperTradeState = { enabled:false, storage:{ mode:'disabled', status:'disabled' }, rules:{ enabled:false, lots:10, triggerLevel:'strong', targetPoints:2, stopLossPoints:5, maxAliveSeconds:0, cooldownSeconds:0 }, trades:[] };
 let currentView = 'live';
 let expanded = { m5:false, m30:false, h3:false }; // per-window expand state, survives re-renders
 const chartState = {
@@ -310,6 +330,7 @@ function fmtNum(n, digits=0){ const v=finite(n); return v===null ? '—' : v.toL
 function fmtPrice(n){ const v=finite(n); return v===null ? '—' : '₹' + v.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtSignedPoints(n){ const v=finite(n); return v===null ? '—' : (v>0?'+':v<0?'−':'') + Math.abs(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtStamp(t){ return t ? new Date(t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'medium'}) : '—'; }
+function fmtSeconds(seconds){ const value=Math.max(0,Math.floor(Number(seconds)||0)); if (!value) return 'Off'; if (value<60) return `${value}s`; const minutes=Math.floor(value/60), remain=value%60; return remain ? `${minutes}m ${remain}s` : `${minutes}m`; }
 
 function chartTime(point){ const t=finite(point?.t); return t===null ? null : Math.floor(t/1000); }
 function chartValue(point, key){ return finite(point?.[key]); }
@@ -532,7 +553,7 @@ function renderOverview(){
 
 function paperResult(trade){
   if (trade.status==='open') return `Current premium ${fmtPrice(trade.lastPrice)} · unrealized ${fmtSignedPoints(Number(trade.lastPrice)-Number(trade.entryPrice))} points`;
-  const close = trade.closeReason==='target' ? 'Target reached' : trade.closeReason==='stop-loss' ? 'Stop-loss reached' : 'Closed';
+  const close = trade.closeReason==='target' ? 'Target reached' : trade.closeReason==='stop-loss' ? 'Stop-loss reached' : trade.closeReason==='time-expired' ? 'Maximum alive time reached' : trade.closeReason==='simulator-disabled' ? 'Closed when simulator was disabled' : 'Closed';
   return `${close} at ${fmtPrice(trade.exitPrice)} · ${fmtSignedPoints(trade.resultPoints)} premium points`;
 }
 
@@ -550,10 +571,28 @@ function renderPaperTrades(){
       <div class="paper-record-top"><div><div class="paper-record-title">Simulated Buy ${trade.optionType==='CALL'?'Call':'Put'} · ${trade.symbol}</div><div class="paper-record-sub">${trade.strike} strike · ${trade.lots} lots · ${trade.signalWindow||'—'} trigger</div></div><span class="paper-badge ${isOpen?'open':'closed'}">${isOpen?'Open':'Closed'}</span></div>
       <div class="paper-stats"><div class="paper-stat"><div class="paper-stat-label">Entry</div><div class="paper-stat-value">${fmtPrice(trade.entryPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Target</div><div class="paper-stat-value rise">${fmtPrice(trade.targetPrice)}</div></div><div class="paper-stat"><div class="paper-stat-label">Stop loss</div><div class="paper-stat-value fall">${fmtPrice(trade.stopLossPrice)}</div></div></div>
       <div class="paper-result ${Number(trade.resultPoints)>0?'rise':Number(trade.resultPoints)<0?'fall':''}">${paperResult(trade)}</div>
-      <div class="paper-record-sub">Opened ${fmtStamp(trade.openedAt)}${trade.closedAt?` · Closed ${fmtStamp(trade.closedAt)}`:''}</div>
+      <div class="paper-record-sub">Opened ${fmtStamp(trade.openedAt)}${trade.expiresAt?` · Auto-close ${fmtStamp(trade.expiresAt)}`:' · No time exit'}${trade.closedAt?` · Closed ${fmtStamp(trade.closedAt)}`:''}</div>
     </article>`;
-  }).join('') : `<div class="paper-empty">No simulated orders yet. A record is created only after an exact completed window produces a qualifying strong-pressure signal and a valid ATM option premium is available.</div>`;
-  container.innerHTML=`<div class="paper-head"><div class="paper-kicker">PAPER ONLY · NO REAL ORDER</div><div class="paper-title-row"><div class="paper-title">Simulated option-trade records</div><div class="paper-status">${status}<br>${storageNote}</div></div><div class="paper-disclaimer">This is an automated paper simulation, not a broker order and not investment advice. Strong upward pressure simulates a Buy Call; strong downward pressure simulates a Buy Put. Entry, target, and stop-loss use option premium only.</div></div><div class="paper-meta"><div class="paper-meta-item"><div class="paper-meta-label">Recorded size</div><div class="paper-meta-value">${rules.lots??10} lots</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium target</div><div class="paper-meta-value">+${rules.targetPoints??2} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium stop</div><div class="paper-meta-value">−${rules.stopLossPoints??5} points</div></div></div><div class="paper-records">${records}</div>`;
+  }).join('') : `<div class="paper-empty">No simulated orders yet. A record is created only after an exact completed window produces the selected qualifying pressure label and a valid ATM option premium is available.</div>`;
+  const triggerText=rules.triggerLevel==='mild'?'Mild or strong':'Strong only';
+  container.innerHTML=`<div class="paper-head"><div class="paper-kicker">PAPER ONLY · NO REAL ORDER</div><div class="paper-title-row"><div class="paper-title">Simulated option-trade records</div><div class="paper-status">${status}<br>${storageNote}</div></div><div class="paper-disclaimer">This is an automated paper simulation, not a broker order and not investment advice. Qualifying upward pressure simulates a Buy Call; qualifying downward pressure simulates a Buy Put. Entry, target, and stop-loss use option premium only.</div></div><div class="paper-meta"><div class="paper-meta-item"><div class="paper-meta-label">Simulator</div><div class="paper-meta-value">${rules.enabled?'Enabled':'Disabled'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Lot size</div><div class="paper-meta-value">${rules.lots??10} lots</div></div><div class="paper-meta-item"><div class="paper-meta-label">Trigger</div><div class="paper-meta-value">${triggerText}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium target</div><div class="paper-meta-value">+${rules.targetPoints??2} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium stop</div><div class="paper-meta-value">−${rules.stopLossPoints??5} points</div></div><div class="paper-meta-item"><div class="paper-meta-label">Time / cooldown</div><div class="paper-meta-value">${fmtSeconds(rules.maxAliveSeconds)} / ${fmtSeconds(rules.cooldownSeconds)}</div></div></div><div class="paper-records">${records}</div>`;
+}
+
+function renderPaperControls(){
+  const rules=paperTradeState?.rules||{};
+  const storage=paperTradeState?.storage||{};
+  const editable=storage.mode==='postgres' && storage.status==='ready';
+  $('paperEnabled').checked=rules.enabled===true;
+  $('paperLots').value=String(rules.lots===20?20:10);
+  $('paperTrigger').value=rules.triggerLevel==='mild'?'mild':'strong';
+  $('paperTarget').value=String(rules.targetPoints??2);
+  $('paperStop').value=String(rules.stopLossPoints??5);
+  $('paperAlive').value=String(rules.maxAliveSeconds??0);
+  $('paperCooldown').value=String(rules.cooldownSeconds??0);
+  document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
+  const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open').length;
+  $('paperEnabledNote').textContent=!editable?'Durable PostgreSQL storage is required for controls.':rules.enabled?'Enabled · qualifying signals may create simulated records.':'Disabled · new simulated entries are blocked.';
+  $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${openCount} simulated trade${openCount===1?'':'s'} open. Target, stop, lifetime, and cooldown are locked into each trade at entry.`;
 }
 
 function setView(view){
@@ -908,7 +947,7 @@ document.querySelectorAll('.reset-history').forEach(button=>{
 });
 
 // ---- Settings sheet ----
-function openSheet(){ $('urlInput').value = backendUrl; $('sheetBackdrop').classList.add('open'); refreshNotifStatus(); }
+function openSheet(){ $('urlInput').value = backendUrl; $('sheetBackdrop').classList.add('open'); renderPaperControls(); refreshNotifStatus(); }
 function closeSheet(){ $('sheetBackdrop').classList.remove('open'); }
 $('gearBtn').onclick = openSheet;
 $('demoConfigBtn').onclick = openSheet;
@@ -920,6 +959,41 @@ $('saveBtn').onclick = () => {
   closeSheet();
   connect();
 };
+
+async function savePaperControls({switchChanged=false}={}){
+  if (!backendUrl){ alert('Set your backend URL first.'); return; }
+  const next={
+    enabled:$('paperEnabled').checked,
+    lots:Number($('paperLots').value),
+    triggerLevel:$('paperTrigger').value,
+    targetPoints:Number($('paperTarget').value),
+    stopLossPoints:Number($('paperStop').value),
+    maxAliveSeconds:Number($('paperAlive').value),
+    cooldownSeconds:Number($('paperCooldown').value),
+  };
+  if (!next.enabled && paperTradeState?.enabled===true){
+    const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open').length;
+    const accepted=window.confirm(`Disable paper trading? ${openCount} open simulated trade${openCount===1?'':'s'} will close now at its last observed option premium. No real order is involved.`);
+    if (!accepted){ $('paperEnabled').checked=true; return; }
+  }
+  const button=$('paperSaveBtn');
+  button.disabled=true; button.textContent=switchChanged?'Updating…':'Applying…';
+  try{
+    const res=await fetch(backendUrl.replace(/\/$/,'') + '/api/paper-trading/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)});
+    const body=await res.json();
+    if (!res.ok) throw new Error(body?.error||'Could not update paper simulator controls.');
+    updatePaperTrades(body);
+    renderPaperControls();
+    if (!switchChanged) alert(next.enabled?'Paper controls saved for future simulated entries.':'Open paper trades were closed and the simulator is now disabled.');
+  }catch(err){
+    alert(err?.message||'Could not update paper simulator controls.');
+    renderPaperControls();
+  }finally{
+    button.disabled=false; button.textContent='Apply paper controls';
+  }
+}
+$('paperSaveBtn').onclick=()=>savePaperControls();
+$('paperEnabled').addEventListener('change',()=>savePaperControls({switchChanged:true}));
 
 connect();
 </script>

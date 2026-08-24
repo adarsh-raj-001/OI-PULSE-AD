@@ -6,6 +6,11 @@ function normalizeTrade(row) {
   return payload;
 }
 
+function normalizeSettings(row) {
+  const payload = row?.settings;
+  return payload && typeof payload === 'object' ? payload : null;
+}
+
 export function createPaperTradeStore({ databaseUrl, pool = null, logger = console }) {
   const client = pool || (databaseUrl ? new Pool({ connectionString: databaseUrl }) : null);
   let initialized = false;
@@ -45,6 +50,13 @@ export function createPaperTradeStore({ databaseUrl, pool = null, logger = conso
           updated_at BIGINT NOT NULL
         )
       `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS oi_pulse_paper_trade_settings (
+          setting_key TEXT PRIMARY KEY,
+          settings JSONB NOT NULL,
+          updated_at BIGINT NOT NULL
+        )
+      `);
       initialized = true;
       status = 'ready';
       lastError = null;
@@ -58,22 +70,23 @@ export function createPaperTradeStore({ databaseUrl, pool = null, logger = conso
   }
 
   async function load() {
-    if (!client || !initialized) return { trades: [], signalStates: {} };
+    if (!client || !initialized) return { trades: [], signalStates: {}, settings: null };
     try {
-      const [tradeResult, signalResult] = await Promise.all([
+      const [tradeResult, signalResult, settingsResult] = await Promise.all([
         client.query('SELECT trade FROM oi_pulse_paper_trades ORDER BY opened_at DESC'),
         client.query('SELECT symbol, signal FROM oi_pulse_paper_trade_signals'),
+        client.query('SELECT settings FROM oi_pulse_paper_trade_settings WHERE setting_key = $1', ['runtime']),
       ]);
       const trades = tradeResult.rows.map(normalizeTrade).filter(Boolean);
       const signalStates = Object.fromEntries(signalResult.rows.map((row) => [row.symbol, row.signal || null]));
       status = 'ready';
       lastError = null;
-      return { trades, signalStates };
+      return { trades, signalStates, settings: normalizeSettings(settingsResult.rows[0]) };
     } catch (err) {
       status = 'degraded';
       lastError = err?.message || String(err);
       logger.error(`[paper-trade-store] recovery failed; paper simulation remains disabled: ${lastError}`);
-      return { trades: [], signalStates: {} };
+      return { trades: [], signalStates: {}, settings: null };
     }
   }
 
@@ -107,6 +120,21 @@ export function createPaperTradeStore({ databaseUrl, pool = null, logger = conso
     });
   }
 
+  function saveSettings(settings, updatedAt) {
+    if (!client || !initialized) return Promise.resolve(false);
+    return enqueue(async () => {
+      await client.query(
+        `INSERT INTO oi_pulse_paper_trade_settings (setting_key, settings, updated_at)
+         VALUES ($1, $2::jsonb, $3)
+         ON CONFLICT (setting_key) DO UPDATE SET settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at`,
+        ['runtime', JSON.stringify(settings), updatedAt],
+      );
+      status = 'ready';
+      lastError = null;
+      return true;
+    });
+  }
+
   async function close() {
     await queued;
     if (client && !pool) await client.end();
@@ -117,6 +145,7 @@ export function createPaperTradeStore({ databaseUrl, pool = null, logger = conso
     load,
     saveTrade,
     saveSignalState,
+    saveSettings,
     close,
     getStatus: () => ({ mode: client ? 'postgres' : 'disabled', status, lastError }),
     isReady: () => initialized && status === 'ready',

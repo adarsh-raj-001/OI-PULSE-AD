@@ -1,25 +1,64 @@
 import { randomUUID } from 'node:crypto';
 import { nearestStrikeIndex, sortedStrikes } from './oiWindows.js';
 
+const LOT_SIZES = new Set([10, 20]);
+const TRIGGER_LEVELS = new Set(['strong', 'mild']);
+const MAX_SECONDS = 86_400;
+
 const finite = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
 
-function preferredSignal(payload) {
+function positiveNumber(value, fallback, name) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = finite(value);
+  if (parsed === null || parsed <= 0 || parsed > 10_000) throw new Error(`${name} must be a positive number.`);
+  return parsed;
+}
+
+function wholeSeconds(value, fallback, name) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = finite(value);
+  if (parsed === null || parsed < 0 || parsed > MAX_SECONDS || !Number.isInteger(parsed)) {
+    throw new Error(`${name} must be a whole number from 0 to ${MAX_SECONDS}.`);
+  }
+  return parsed;
+}
+
+function normalizeRules(input = {}, base = {}) {
+  const enabled = input.enabled === undefined ? base.enabled === true : input.enabled === true;
+  const lotsCandidate = input.lots === undefined || input.lots === null || input.lots === '' ? base.lots : Number(input.lots);
+  if (!LOT_SIZES.has(lotsCandidate)) throw new Error('Lot size must be 10 or 20 lots.');
+  const triggerCandidate = input.triggerLevel === undefined || input.triggerLevel === null || input.triggerLevel === ''
+    ? (base.triggerLevel || 'strong')
+    : String(input.triggerLevel).toLowerCase();
+  if (!TRIGGER_LEVELS.has(triggerCandidate)) throw new Error('Trigger level must be mild or strong.');
+  return {
+    enabled,
+    lots: lotsCandidate,
+    triggerLevel: triggerCandidate,
+    targetPoints: positiveNumber(input.targetPoints, base.targetPoints ?? 2, 'Target'),
+    stopLossPoints: positiveNumber(input.stopLossPoints, base.stopLossPoints ?? 5, 'Stop-loss'),
+    maxAliveSeconds: wholeSeconds(input.maxAliveSeconds, base.maxAliveSeconds ?? 0, 'Maximum alive time'),
+    cooldownSeconds: wholeSeconds(input.cooldownSeconds, base.cooldownSeconds ?? 0, 'Cooldown'),
+  };
+}
+
+function preferredSignal(payload, triggerLevel) {
   const entries = [
     ['m5', '5 Min'],
     ['m30', '30 Min'],
     ['h3', '3 Hour'],
   ].map(([key, label]) => ({ key, label, window: payload?.windows?.[key] }))
     .filter((entry) => entry.window?.referenceMode === 'exact-window' && entry.window?.marketStrength);
-  const preferred = entries.find((entry) => (
-    entry.window.marketStrength.label === 'Strong upward pressure'
-    || entry.window.marketStrength.label === 'Strong downward pressure'
-  ));
+  const qualifyingLabels = triggerLevel === 'mild'
+    ? new Set(['Strong upward pressure', 'Strong downward pressure', 'Mild upward pressure', 'Mild downward pressure'])
+    : new Set(['Strong upward pressure', 'Strong downward pressure']);
+  const preferred = entries.find((entry) => qualifyingLabels.has(entry.window.marketStrength.label));
   const label = preferred?.window?.marketStrength?.label;
-  if (label === 'Strong upward pressure') return { direction: 'up', optionSide: 'ce', window: preferred };
-  if (label === 'Strong downward pressure') return { direction: 'down', optionSide: 'pe', window: preferred };
+  if (label === 'Strong upward pressure' || label === 'Mild upward pressure') return { direction: 'up', optionSide: 'ce', window: preferred };
+  if (label === 'Strong downward pressure' || label === 'Mild downward pressure') return { direction: 'down', optionSide: 'pe', window: preferred };
   return null;
 }
 
@@ -42,6 +81,16 @@ function optionLastPrice(summary, trade) {
 export function createPaperTradeEngine({ store, rules, onChange = () => {}, now = () => Date.now() }) {
   const trades = [];
   const signalStates = {};
+  const cooldownUntil = {};
+  let currentRules = normalizeRules(rules, {
+    enabled: false,
+    lots: 10,
+    triggerLevel: 'strong',
+    targetPoints: 2,
+    stopLossPoints: 5,
+    maxAliveSeconds: 0,
+    cooldownSeconds: 0,
+  });
   let enabled = false;
   let queue = Promise.resolve();
 
@@ -53,7 +102,7 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
     return {
       enabled,
       storage: store.getStatus(),
-      rules: { ...rules },
+      rules: { ...currentRules },
       trades: [...trades].sort((a, b) => b.openedAt - a.openedAt),
     };
   }
@@ -62,63 +111,86 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
     onChange(snapshot());
   }
 
-  async function restore() {
-    if (rules.enabled === false) {
-      enabled = false;
-      changed();
-      return snapshot();
+  function restoreCooldowns() {
+    for (const trade of trades) {
+      const expiry = finite(trade.cooldownUntil);
+      if (trade.status === 'closed' && expiry !== null) cooldownUntil[trade.symbol] = Math.max(cooldownUntil[trade.symbol] || 0, expiry);
     }
-    enabled = await store.initialize();
-    if (!enabled) {
+  }
+
+  async function restore() {
+    const storageReady = await store.initialize();
+    if (!storageReady) {
+      enabled = false;
       changed();
       return snapshot();
     }
     const restored = await store.load();
     trades.splice(0, trades.length, ...restored.trades);
     Object.assign(signalStates, restored.signalStates);
+    restoreCooldowns();
+    currentRules = normalizeRules(restored.settings || currentRules, currentRules);
+    if (!restored.settings) await store.saveSettings(currentRules, now());
+    enabled = currentRules.enabled === true;
     changed();
     return snapshot();
   }
 
-  function closeTrade(trade, exitPrice, closedAt, closeReason) {
+  async function closeTrade(trade, exitPrice, closedAt, closeReason, exitPriceSource = 'option-ltp') {
     trade.status = 'closed';
     trade.closedAt = closedAt;
     trade.exitPrice = exitPrice;
+    trade.exitPriceSource = exitPriceSource;
     trade.closeReason = closeReason;
     trade.resultPoints = exitPrice - trade.entryPrice;
-    void store.saveTrade(trade);
+    const cooldownSeconds = Number(trade.cooldownSecondsAtEntry) || 0;
+    trade.cooldownUntil = closedAt + (cooldownSeconds * 1000);
+    if (trade.cooldownUntil > closedAt) cooldownUntil[trade.symbol] = Math.max(cooldownUntil[trade.symbol] || 0, trade.cooldownUntil);
+    await store.saveTrade(trade);
   }
 
-  function monitor(symbol, summary, timestamp) {
+  async function monitor(symbol, summary, timestamp) {
     const trade = activeTrade(symbol);
     if (!trade) return false;
     const currentPrice = optionLastPrice(summary, trade);
-    if (currentPrice === null) return false;
-    trade.lastPrice = currentPrice;
-    trade.lastUpdatedAt = timestamp;
-    if (currentPrice >= trade.targetPrice) closeTrade(trade, currentPrice, timestamp, 'target');
-    else if (currentPrice <= trade.stopLossPrice) closeTrade(trade, currentPrice, timestamp, 'stop-loss');
-    else void store.saveTrade(trade);
-    return true;
+    if (currentPrice !== null) {
+      trade.lastPrice = currentPrice;
+      trade.lastUpdatedAt = timestamp;
+      if (currentPrice >= trade.targetPrice) {
+        await closeTrade(trade, currentPrice, timestamp, 'target');
+        return true;
+      }
+      if (currentPrice <= trade.stopLossPrice) {
+        await closeTrade(trade, currentPrice, timestamp, 'stop-loss');
+        return true;
+      }
+    }
+    if (trade.expiresAt && timestamp >= trade.expiresAt) {
+      const exitPrice = currentPrice ?? finite(trade.lastPrice) ?? trade.entryPrice;
+      await closeTrade(trade, exitPrice, timestamp, 'time-expired', currentPrice === null ? 'last-observed-option-ltp' : 'option-ltp');
+      return true;
+    }
+    if (currentPrice !== null) await store.saveTrade(trade);
+    return currentPrice !== null;
   }
 
-  function setSignalState(symbol, direction, timestamp) {
-    if (signalStates[symbol] === direction) return;
+  async function setSignalState(symbol, direction, timestamp) {
+    if ((signalStates[symbol] || null) === direction) return;
     signalStates[symbol] = direction;
-    void store.saveSignalState(symbol, direction, timestamp);
+    await store.saveSignalState(symbol, direction, timestamp);
   }
 
-  function maybeOpen(symbol, payload, summary, timestamp) {
-    const signal = preferredSignal(payload);
+  async function maybeOpen(symbol, payload, summary, timestamp) {
+    const signal = preferredSignal(payload, currentRules.triggerLevel);
     if (!signal) {
-      setSignalState(symbol, null, timestamp);
+      await setSignalState(symbol, null, timestamp);
       return false;
     }
-    const previousDirection = signalStates[symbol] || null;
-    setSignalState(symbol, signal.direction, timestamp);
-    if (activeTrade(symbol) || previousDirection === signal.direction) return false;
+    await setSignalState(symbol, signal.direction, timestamp);
+    if (activeTrade(symbol) || (cooldownUntil[symbol] || 0) > timestamp) return false;
     const option = atmOption(summary, signal.optionSide);
     if (!option) return false;
+    const expiresAt = currentRules.maxAliveSeconds > 0 ? timestamp + (currentRules.maxAliveSeconds * 1000) : null;
     const trade = {
       id: randomUUID(),
       status: 'open',
@@ -127,28 +199,77 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
       optionSide: signal.optionSide,
       securityId: option.securityId,
       strike: option.strike,
-      lots: rules.lots,
+      lots: currentRules.lots,
       entryPrice: option.entryPrice,
       lastPrice: option.entryPrice,
-      targetPrice: option.entryPrice + rules.targetPoints,
-      stopLossPrice: Math.max(0, option.entryPrice - rules.stopLossPoints),
+      targetPrice: option.entryPrice + currentRules.targetPoints,
+      stopLossPrice: Math.max(0, option.entryPrice - currentRules.stopLossPoints),
       openedAt: timestamp,
       lastUpdatedAt: timestamp,
+      expiresAt,
+      triggerLevel: currentRules.triggerLevel,
+      cooldownSecondsAtEntry: currentRules.cooldownSeconds,
       signalWindow: signal.window.label,
       signalLabel: signal.window.window.marketStrength.label,
       source: 'dhan-live-paper-simulation',
       paperOnly: true,
     };
     trades.push(trade);
-    void store.saveTrade(trade);
+    await store.saveTrade(trade);
     return true;
+  }
+
+  async function disableAndClose(timestamp) {
+    const openTrades = trades.filter((trade) => trade.status === 'open');
+    for (const trade of openTrades) {
+      const exitPrice = finite(trade.lastPrice) ?? trade.entryPrice;
+      await closeTrade(trade, exitPrice, timestamp, 'simulator-disabled', 'last-observed-option-ltp');
+    }
+  }
+
+  function updateSettings(nextSettings, timestamp = now()) {
+    const operation = queue.then(async () => {
+      if (!store.isReady()) {
+        const error = new Error('Paper simulator settings are unavailable until durable PostgreSQL storage is ready.');
+        error.statusCode = 503;
+        throw error;
+      }
+      const nextRules = normalizeRules(nextSettings, currentRules);
+      if (nextRules.enabled === false) await disableAndClose(timestamp);
+      currentRules = nextRules;
+      enabled = currentRules.enabled === true;
+      await store.saveSettings(currentRules, timestamp);
+      changed();
+      return snapshot();
+    });
+    queue = operation.catch((err) => {
+      console.error('[paper-trading]', err.message);
+      return snapshot();
+    });
+    return operation;
+  }
+
+  function expire(timestamp = now()) {
+    queue = queue.then(async () => {
+      const expiring = trades.filter((trade) => trade.status === 'open' && trade.expiresAt && timestamp >= trade.expiresAt);
+      for (const trade of expiring) {
+        const exitPrice = finite(trade.lastPrice) ?? trade.entryPrice;
+        await closeTrade(trade, exitPrice, timestamp, 'time-expired', 'last-observed-option-ltp');
+      }
+      if (expiring.length) changed();
+      return snapshot();
+    }).catch((err) => {
+      console.error('[paper-trading]', err.message);
+      return snapshot();
+    });
+    return queue;
   }
 
   function process(symbol, payload, summary, timestamp = now()) {
     queue = queue.then(async () => {
-      if (!enabled || !summary || !payload) return snapshot();
-      const monitored = monitor(symbol, summary, timestamp);
-      const opened = maybeOpen(symbol, payload, summary, timestamp);
+      if (!summary || !payload) return snapshot();
+      const monitored = enabled ? await monitor(symbol, summary, timestamp) : false;
+      const opened = enabled && !monitored ? await maybeOpen(symbol, payload, summary, timestamp) : false;
       if (monitored || opened) changed();
       return snapshot();
     }).catch((err) => {
@@ -158,5 +279,5 @@ export function createPaperTradeEngine({ store, rules, onChange = () => {}, now 
     return queue;
   }
 
-  return { restore, process, snapshot, activeTrade };
+  return { restore, process, expire, snapshot, activeTrade, updateSettings };
 }
