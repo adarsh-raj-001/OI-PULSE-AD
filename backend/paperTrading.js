@@ -12,8 +12,8 @@ const OI_METRICS = ['call', 'put', 'combined', 'difference'];
 const TRADE_SIDES = ['auto', 'call', 'put'];
 
 export const PAPER_PORTFOLIOS = {
-  portfolio1: { id: 'portfolio1', label: 'Portfolio 1 · Follow strength', strategy: 'market-strength', directionMode: 'follow' },
-  portfolio2: { id: 'portfolio2', label: 'Portfolio 2 · Inverse strength', strategy: 'market-strength', directionMode: 'inverse' },
+  portfolio1: { id: 'portfolio1', label: 'Portfolio 1 · Strength strategy', strategy: 'market-strength' },
+  portfolio2: { id: 'portfolio2', label: 'Portfolio 2 · Strength strategy', strategy: 'market-strength' },
   portfolio3: { id: 'portfolio3', label: 'Portfolio 3 · OI threshold', strategy: 'oi-threshold', directionMode: 'oi' },
 };
 
@@ -60,24 +60,21 @@ function selectValue(value, allowed, fallback, name) {
 
 function defaultPortfolio(id) {
   const meta = PAPER_PORTFOLIOS[id];
-  return {
+  const shared = {
     id,
     enabled: false,
     lots: 10,
     symbolEnabled: Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, true])),
     strengthThreshold: 60,
-    tradeSide: 'auto',
     entryPremiumOffset: 0,
     targetPoints: 2,
     stopLossPoints: 5,
     maxAliveSeconds: 0,
     cooldownSeconds: 0,
-    oiWindow: 'm5',
-    oiMetric: 'combined',
-    oiThreshold: 1,
     strategy: meta.strategy,
-    directionMode: meta.directionMode,
   };
+  if (id === 'portfolio3') return { ...shared, tradeSide: 'auto', oiWindow: 'm5', oiMetric: 'combined', oiThreshold: 1, directionMode: 'oi' };
+  return { ...shared, reverseOrders: id === 'portfolio2' };
 }
 
 function normalizePortfolio(input = {}, base = {}, id) {
@@ -86,24 +83,28 @@ function normalizePortfolio(input = {}, base = {}, id) {
     ...(fallback.symbolEnabled || {}),
     ...(input.symbolEnabled && typeof input.symbolEnabled === 'object' ? input.symbolEnabled : {}),
   };
-  return {
+  const normalized = {
     id,
     enabled: input.enabled === undefined ? fallback.enabled === true : input.enabled === true,
     lots: positiveWholeNumber(input.lots, fallback.lots, 'Lots', MAX_LOTS),
     symbolEnabled: Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, sourceSymbolEnabled[symbol] !== false])),
     strengthThreshold: positiveWholeNumber(input.strengthThreshold, fallback.strengthThreshold, 'Strength threshold', 100),
-    tradeSide: selectValue(input.tradeSide, TRADE_SIDES, fallback.tradeSide, 'Trade side'),
     entryPremiumOffset: premiumOffset(input.entryPremiumOffset, fallback.entryPremiumOffset),
     targetPoints: positiveNumber(input.targetPoints, fallback.targetPoints, 'Target'),
     stopLossPoints: positiveNumber(input.stopLossPoints, fallback.stopLossPoints, 'Stop-loss'),
     maxAliveSeconds: wholeSeconds(input.maxAliveSeconds, fallback.maxAliveSeconds, 'Maximum alive time'),
     cooldownSeconds: wholeSeconds(input.cooldownSeconds, fallback.cooldownSeconds, 'Cooldown'),
+    strategy: PAPER_PORTFOLIOS[id].strategy,
+  };
+  if (id === 'portfolio3') return {
+    ...normalized,
+    tradeSide: selectValue(input.tradeSide, TRADE_SIDES, fallback.tradeSide, 'Trade side'),
     oiWindow: selectValue(input.oiWindow, OI_WINDOWS, fallback.oiWindow, 'OI window'),
     oiMetric: selectValue(input.oiMetric, OI_METRICS, fallback.oiMetric, 'OI metric'),
     oiThreshold: positiveNumber(input.oiThreshold, fallback.oiThreshold, 'OI threshold'),
-    strategy: PAPER_PORTFOLIOS[id].strategy,
-    directionMode: PAPER_PORTFOLIOS[id].directionMode,
+    directionMode: 'oi',
   };
+  return { ...normalized, reverseOrders: input.reverseOrders === undefined ? fallback.reverseOrders === true : input.reverseOrders === true };
 }
 
 function normalizeRules(input = {}, base = {}) {
@@ -150,11 +151,11 @@ function marketStrengthSignal(payload, portfolio) {
   const followSide = direction === 'up' ? 'ce' : 'pe';
   return {
     direction,
-    optionSide: portfolio.directionMode === 'inverse' ? (followSide === 'ce' ? 'pe' : 'ce') : followSide,
+    optionSide: followSide,
     window: preferred,
     intensity: preferred.window.marketStrength.intensity,
     label: preferred.window.marketStrength.label,
-    triggerType: portfolio.directionMode === 'inverse' ? 'inverse-market-strength' : 'market-strength',
+    triggerType: portfolio.reverseOrders ? 'reverse-market-strength' : 'market-strength',
   };
 }
 
@@ -195,6 +196,7 @@ function preferredSignal(payload, portfolio) {
 function configuredOptionSide(signal, portfolio) {
   if (portfolio.tradeSide === 'call') return 'ce';
   if (portfolio.tradeSide === 'put') return 'pe';
+  if (portfolio.strategy === 'market-strength' && portfolio.reverseOrders) return signal.optionSide === 'ce' ? 'pe' : 'ce';
   return signal.optionSide;
 }
 

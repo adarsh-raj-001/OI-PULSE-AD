@@ -104,4 +104,8 @@
 - [x] Add the inverse-direction strategy in Portfolio 2 and configurable OI-window, threshold, and Call/Put routing for Portfolio 3.
 - [x] Diagnose and repair the graph interaction or rendering defect without weakening retained-history or Dhan polling safeguards.
 - [x] Validate ITM OI calculations, portfolio isolation, paper-only safety, graph behavior, and frontend/docs parity before review publication.
-- [ ] Publish the reviewed ITM OI, multi-portfolio paper-simulator, and graph repair changes through a pull request.
+- [x] Publish the reviewed ITM OI, multi-portfolio paper-simulator, and graph repair changes through a pull request.
+- [x] Restrict OI window, metric, and threshold controls and persistence exclusively to Portfolio 3.
+- [x] Replace the Call/Put routing selector in Portfolios 1 and 2 with a configurable Reverse orders switch that swaps follow-strength Call/Put entries.
+- [x] Validate portfolio-specific settings, reverse-order routing, paper-only safety, and frontend/docs parity before review publication.
+- [ ] Publish the reviewed portfolio-control correction through a pull request.
