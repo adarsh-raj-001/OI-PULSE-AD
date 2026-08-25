@@ -108,4 +108,4 @@
 - [x] Restrict OI window, metric, and threshold controls and persistence exclusively to Portfolio 3.
 - [x] Replace the Call/Put routing selector in Portfolios 1 and 2 with a configurable Reverse orders switch that swaps follow-strength Call/Put entries.
 - [x] Validate portfolio-specific settings, reverse-order routing, paper-only safety, and frontend/docs parity before review publication.
-- [ ] Publish the reviewed portfolio-control correction through a pull request.
+- [x] Publish the reviewed portfolio-control correction through a pull request.
