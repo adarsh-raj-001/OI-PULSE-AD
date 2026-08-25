@@ -143,3 +143,7 @@
 - [x] Replace rolling OI-window comparisons with aligned five-minute, 30-minute, and three-hour baseline resets that set the delta to zero from the current snapshot.
 - [x] Validate opposite-side percentage trigger routing, aligned reset timing, zero-delta semantics, dashboard clarity, durable history, and paper-only safeguards.
 - [x] Publish the reviewed Portfolio 3 OI-percentage trigger and aligned-window reset update through a pull request.
+- [x] Make the mobile settings sheet reset to its top position every time it opens so no upper controls are hidden.
+- [x] Add an accessible upper-left back button that closes settings without applying changes.
+- [x] Validate the mobile portrait settings layout, back interaction, frontend/docs parity, and paper-only safeguards before review publication.
+- [x] Publish the reviewed mobile settings-sheet navigation correction through a pull request.
