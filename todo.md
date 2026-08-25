@@ -129,3 +129,7 @@
 - [x] Add configurable absolute-number versus percentage threshold modes to Portfolio 3, including the appropriate threshold input and persisted settings.
 - [x] Validate three-ITM OI deltas, percentage math, Portfolio 3 routing, dashboard parity, and paper-only safeguards before review publication.
 - [x] Publish the reviewed three-ITM OI percentage and Portfolio 3 threshold-mode update through a pull request.
+- [x] Replace duplicated per-strike “Side total” values with meaningful baseline/current OI information and make selected-strike percentage change plainly visible.
+- [x] Clarify three-Call, three-Put, and combined OI aggregate totals without repeating the per-strike change.
+- [x] Validate the corrected compact mobile layout, data labels, frontend/docs parity, and paper-only safeguards before review publication.
+- [x] Publish the reviewed OI-card data-representation correction through a pull request.
