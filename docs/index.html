@@ -132,6 +132,21 @@
 
   .band-total{margin-top:10px; padding:10px 2px; border-top:1px solid var(--border); border-bottom:1px solid var(--border);}
   .band-total .l{font-size:11.5px; color:var(--text-dim); margin-bottom:2px;}
+  .itm-selection{display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:stretch; gap:8px; margin-top:11px; padding:9px; border:1px solid var(--border); border-radius:10px; background:var(--surface-alt);}
+  .itm-selection-side{min-width:0; display:flex; flex-direction:column; gap:6px;}
+  .itm-selection-side.put{text-align:right; align-items:flex-end;}
+  .itm-selection-label{font-family:'IBM Plex Mono',monospace; color:var(--text-faint); font-size:9px; letter-spacing:.06em; text-transform:uppercase;}
+  .itm-selection-label strong{color:var(--text-dim); font-weight:600;}
+  .itm-chips{display:flex; flex-wrap:wrap; gap:4px;}
+  .itm-selection-side.put .itm-chips{justify-content:flex-end;}
+  .itm-chip{font-family:'IBM Plex Mono',monospace; font-size:10px; line-height:1; padding:5px 6px; border-radius:5px; border:1px solid var(--border); color:var(--text-dim); background:#0E131C;}
+  .itm-chip.call{border-color:rgba(79,216,232,.35); color:var(--accent);}
+  .itm-chip.put{border-color:rgba(80,219,162,.35); color:var(--rise);}
+  .atm-excluded{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-width:66px; padding:5px 7px; border-left:1px dashed var(--border); border-right:1px dashed var(--border); text-align:center;}
+  .atm-excluded .k{font-family:'IBM Plex Mono',monospace; color:var(--fall); font-size:8.5px; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap;}
+  .atm-excluded .v{font-family:'IBM Plex Mono',monospace; color:var(--text); font-size:11px; font-weight:700;}
+  .atm-excluded .n{color:var(--text-faint); font-size:8px; line-height:1.25;}
+  @media (max-width:520px){.itm-selection{gap:5px; padding:8px 6px;}.itm-chip{font-size:9px; padding:4px 5px;}.atm-excluded{min-width:54px; padding:4px;}.atm-excluded .v{font-size:10px;}}
 
   .expand-toggle{
     display:flex; justify-content:center; align-items:center; gap:5px; width:100%;
@@ -813,6 +828,13 @@ function renderCards(payload){
     const bandDeltaPe = Number.isFinite(win.bandDeltaPe) ? win.bandDeltaPe : win.band.filter(r=>r.optionSide==='pe').reduce((s, r) => s + (Number(r.dPe)||0), 0);
     const stepLabel = win.strikeStep == null ? 'variable' : win.strikeStep;
     const itmRows=[...win.band].sort((a,b)=>a.optionSide===b.optionSide?a.strike-b.strike:(a.optionSide==='ce'?-1:1));
+    const atmNumeric=Number.isFinite(Number(win.atmStrike)) ? Number(win.atmStrike) : null;
+    const rawCallItmStrikes=Array.isArray(win.callItmStrikes)&&win.callItmStrikes.length ? win.callItmStrikes : itmRows.filter(row=>row.optionSide==='ce').map(row=>row.strike).sort((a,b)=>b-a);
+    const rawPutItmStrikes=Array.isArray(win.putItmStrikes)&&win.putItmStrikes.length ? win.putItmStrikes : itmRows.filter(row=>row.optionSide==='pe').map(row=>row.strike).sort((a,b)=>a-b);
+    const callItmStrikes=rawCallItmStrikes.filter(strike=>Number(strike)!==atmNumeric).slice(0,3);
+    const putItmStrikes=rawPutItmStrikes.filter(strike=>Number(strike)!==atmNumeric).slice(0,3);
+    const completeStrictBand=callItmStrikes.length===3&&putItmStrikes.length===3;
+    const atmStrike=atmNumeric===null ? '—' : fmtInt(atmNumeric);
     const isOpen = expanded[w.key];
     const totalCls = trendClass(win.bandDeltaTotal);
 
@@ -824,7 +846,12 @@ function renderCards(payload){
         </div>
       </div>
       <div class="band-total">
-        <span class="l">Combined change · ${win.callItmStrikes?.length||3} ITM Calls + ${win.putItmStrikes?.length||3} ITM Puts</span>
+        <span class="l">${completeStrictBand?'Combined change · exactly 3 strict ITM Calls + 3 strict ITM Puts':'Strict ITM OI band pending · requires 3 Calls + 3 Puts with ATM excluded'}</span>
+        ${completeStrictBand?`<div class="itm-selection" aria-label="Strict in-the-money strike selection. ATM is excluded.">
+          <div class="itm-selection-side call"><div class="itm-selection-label"><strong>3 Call ITM</strong> · below underlying</div><div class="itm-chips">${callItmStrikes.map(strike=>`<span class="itm-chip call">${fmtInt(strike)}</span>`).join('')}</div></div>
+          <div class="atm-excluded"><span class="k">ATM excluded</span><span class="v">${atmStrike}</span><span class="n">No OI counted</span></div>
+          <div class="itm-selection-side put"><div class="itm-selection-label"><strong>3 Put ITM</strong> · above underlying</div><div class="itm-chips">${putItmStrikes.map(strike=>`<span class="itm-chip put">${fmtInt(strike)}</span>`).join('')}</div></div>
+        </div>`:`<div class="itm-selection" aria-label="Strict in-the-money selection is waiting for a complete server band."><div class="itm-selection-side call"><div class="itm-selection-label"><strong>ATM excluded</strong> · ${atmStrike}</div><div class="itm-selection-label">No partial OI calculation is shown.</div></div><div class="atm-excluded"><span class="k">Strict ITM only</span><span class="v">3 + 3</span><span class="n">Awaiting six legs</span></div><div class="itm-selection-side put"><div class="itm-selection-label"><strong>Server band</strong> · incomplete</div><div class="itm-selection-label">Refreshes automatically when complete.</div></div></div>`}
         <div class="stat3">
           <div class="stat"><div class="lbl">Call OI</div><div class="val mono ${trendClass(bandDeltaCe)}">${fmtSigned(bandDeltaCe)}</div></div>
           <div class="stat"><div class="lbl">Put OI</div><div class="val mono ${trendClass(bandDeltaPe)}">${fmtSigned(bandDeltaPe)}</div></div>

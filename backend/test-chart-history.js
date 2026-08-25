@@ -29,8 +29,8 @@ snapshotTwo.strikes[110].ce.oi = 118;
 snapshotTwo.strikes[120].pe.oi = 230;
 const second = buildChartPoint(snapshotTwo, first, 1);
 assert.equal(second.underlyingPriceChange, 2);
-assert.deepEqual(second.callItmStrikes, [110]);
-assert.equal(second.callOiChange, 18);
+assert.deepEqual(second.callItmStrikes, [100], 'the nearest ATM strike is excluded even when the underlying sits between strikes');
+assert.equal(second.callOiChange, 0);
 assert.equal(second.putOiChange, 10);
 
 const retained = [];
@@ -45,5 +45,28 @@ appendChartPoint(eventPoints, sameSecond, 0, 1_000);
 assert.equal(eventPoints.length, 1, 'nearby event points should replace the current chart bucket');
 assert.equal(eventPoints[0].t, first.t, 'replacement preserves the original bucket timestamp');
 assert.equal(eventPoints[0].underlyingPrice, second.underlyingPrice);
+
+function strictChartSnapshot(t, oiShift = 0) {
+  const strikes = [24000, 24050, 24100, 24150, 24200, 24250, 24300];
+  return {
+    t,
+    underlyingPrice: 24150,
+    strikes: Object.fromEntries(strikes.map((strike, index) => [strike, {
+      ce: { oi: 100 + index + oiShift, lastPrice: 10 + index, volume: 1 },
+      pe: { oi: 200 + index + oiShift, lastPrice: 20 + index, volume: 1 },
+    }])),
+  };
+}
+
+const strictChart = buildChartPoint(strictChartSnapshot(5_000), null, 3);
+assert.deepEqual(strictChart.callItmStrikes, [24100, 24050, 24000]);
+assert.deepEqual(strictChart.putItmStrikes, [24200, 24250, 24300]);
+assert.equal(strictChart.atmStrike, 24150);
+assert.equal(strictChart.callOi, 303, 'chart Call OI uses exactly the three strict ITM Calls');
+assert.equal(strictChart.putOi, 615, 'chart Put OI uses exactly the three strict ITM Puts');
+
+const incompleteStrictChart = strictChartSnapshot(6_000);
+incompleteStrictChart.strikes[24200].pe.oi = null;
+assert.equal(buildChartPoint(incompleteStrictChart, strictChart, 3), null, 'the chart must not emit a partial strict-ITM OI point');
 
 console.log('chart-history tests passed');
