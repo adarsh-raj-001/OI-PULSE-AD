@@ -115,4 +115,4 @@
 - [x] Inspect and remove any remaining OI-trigger controls, labels, or persisted legacy fields from Portfolio 1 and Portfolio 2.
 - [x] Ensure only Portfolio 3 can evaluate an OI threshold or expose an OI-trigger configuration.
 - [x] Validate exclusive Portfolio 3 OI triggering, dashboard parity, and paper-only safeguards before review publication.
-- [ ] Publish the reviewed exclusive-Portfolio-3 OI-trigger correction through a pull request.
+- [x] Publish the reviewed exclusive-Portfolio-3 OI-trigger correction through a pull request.
