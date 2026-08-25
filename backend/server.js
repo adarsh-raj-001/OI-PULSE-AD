@@ -474,6 +474,18 @@ app.post('/api/paper-trading/settings', async (req, res) => {
   }
 });
 
+// Closes one selected simulated position at its latest already-observed option
+// premium. This does not request Dhan REST data and cannot route a broker order.
+app.post('/api/paper-trades/:tradeId/exit', async (req, res) => {
+  try {
+    const state = await paperTrading.exitTrade(req.params.tradeId, Date.now());
+    refreshLiveSubscriptions();
+    res.json(state);
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ error: err.message || 'Could not exit paper trade.' });
+  }
+});
+
 // Full retained history is requested once after connection or a symbol change.
 // SSE subsequently sends only the latest compact point rather than re-sending
 // up to ten hours of chart data every push interval.

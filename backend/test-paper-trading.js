@@ -132,6 +132,22 @@ state = freshnessEngine.snapshot();
 assert.equal(state.trades[0].entryPrice, 99, 'a new simulation must fill at the latest valid selected-option LTP');
 assert.equal(state.trades[0].entryPriceObservedAt, 16_002);
 
+const manualExitStore = new MemoryStore();
+const manualExitEngine = createPaperTradeEngine({ store: manualExitStore, rules: defaults, contractLotSizes });
+await manualExitEngine.restore();
+await manualExitEngine.process('NIFTY', payload('Strong upward pressure'), summary(100, 120, 20_000), 20_000);
+const manualExitId = manualExitEngine.snapshot().trades[0].id;
+await manualExitEngine.process('NIFTY', payload('Balanced / mixed'), summary(101.5, 120, 20_100), 20_100);
+await manualExitEngine.exitTrade(manualExitId, 20_200);
+state = manualExitEngine.snapshot();
+assert.equal(state.trades[0].status, 'closed', 'manual exit closes only the selected open paper position');
+assert.equal(state.trades[0].closeReason, 'manual-exit');
+assert.equal(state.trades[0].exitPrice, 101.5, 'manual exit uses the latest already-observed option LTP');
+assert.equal(state.trades[0].exitPriceSource, 'last-observed-option-ltp');
+assert.equal(state.trades[0].resultPoints, 1.5);
+assert.equal(manualExitStore.trades[0].closeReason, 'manual-exit', 'manual exit must persist to the paper ledger');
+await assert.rejects(() => manualExitEngine.exitTrade(manualExitId, 20_300), /Only an open paper trade can be exited manually/);
+
 const pnlStore = new MemoryStore();
 const pnlEngine = createPaperTradeEngine({ store: pnlStore, rules: defaults, contractLotSizes });
 await pnlEngine.restore();
