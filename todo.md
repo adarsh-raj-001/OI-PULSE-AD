@@ -116,3 +116,11 @@
 - [x] Ensure only Portfolio 3 can evaluate an OI threshold or expose an OI-trigger configuration.
 - [x] Validate exclusive Portfolio 3 OI triggering, dashboard parity, and paper-only safeguards before review publication.
 - [x] Publish the reviewed exclusive-Portfolio-3 OI-trigger correction through a pull request.
+- [x] Diagnose every entry gate that can block an enabled strength portfolio when market intensity meets its threshold.
+- [x] Confirm that no paper-entry defect was present; the one-open-or-pending-entry-per-portfolio-and-symbol gate blocked duplicate entries as designed.
+- [x] Validate qualifying strength signals, cooldown and active-position gates, portfolio isolation, and paper-only safeguards through live-state inspection.
+- [x] Complete the no-code paper-entry investigation; no corrective pull request was required.
+- [x] Add a paper-only manual-exit API that closes only a selected open paper trade at its latest observed option price.
+- [x] Add an Exit now control to each rendered open paper position with clear closing feedback and an auditable `manual-exit` reason.
+- [x] Validate manual exits, persistence, portfolio isolation, frontend/docs parity, and paper-only safeguards before review publication.
+- [x] Publish the reviewed paper-only manual-exit feature through a pull request.

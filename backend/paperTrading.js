@@ -353,6 +353,22 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     await store.saveTrade(trade);
   }
 
+  function exitTrade(tradeId, timestamp = now()) {
+    const operation = queue.then(async () => {
+      if (!store.isReady()) { const error = new Error('Paper trade exits are unavailable until durable PostgreSQL storage is ready.'); error.statusCode = 503; throw error; }
+      if (!tradeId || typeof tradeId !== 'string') { const error = new Error('A valid paper trade ID is required.'); error.statusCode = 400; throw error; }
+      const trade = trades.find((entry) => entry.id === tradeId);
+      if (!trade) { const error = new Error('Paper trade not found.'); error.statusCode = 404; throw error; }
+      if (trade.status !== 'open') { const error = new Error('Only an open paper trade can be exited manually.'); error.statusCode = 409; throw error; }
+      const exitPrice = finite(trade.lastPrice) ?? finite(trade.entryPrice);
+      await closeTrade(trade, exitPrice, timestamp, 'manual-exit', 'last-observed-option-ltp');
+      changed();
+      return snapshot();
+    });
+    queue = operation.catch((err) => { console.error('[paper-trading]', err.message); return snapshot(); });
+    return operation;
+  }
+
   async function monitorOpen(trade, summary, timestamp) {
     const quote = optionLastPrice(summary, trade, timestamp);
     const currentPrice = quote?.price ?? null;
@@ -581,5 +597,5 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     return queue;
   }
 
-  return { restore, process, expire, snapshot, activeTrade, activeTrades, activeEntry, updateSettings, setMarketSession, resetSession };
+  return { restore, process, expire, snapshot, activeTrade, activeTrades, activeEntry, exitTrade, updateSettings, setMarketSession, resetSession };
 }
