@@ -138,4 +138,4 @@
 - [ ] Verify the live public dashboard source and report the resolution without changing paper-trading state.
 - [x] Correct positive paper-entry offsets so ₹1 means a pending entry ₹1 below the current option price, not above it.
 - [x] Validate pending-entry target prices and fill conditions for Call and Put paper trades without broker execution.
-- [ ] Publish the reviewed paper-entry offset direction correction through a pull request.
+- [x] Publish the reviewed paper-entry offset direction correction through a pull request.
