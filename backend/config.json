@@ -63,7 +63,7 @@
     "portfolios": {
       "portfolio1": { "enabled": true, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": false, "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
       "portfolio2": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": true, "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
-      "portfolio3": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0, "oiWindow": "m5", "oiMetric": "combined", "oiThreshold": 1 }
+      "portfolio3": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0, "oiWindow": "m5", "oiMetric": "combined", "oiThresholdMode": "number", "oiThreshold": 1 }
     }
   }
 }

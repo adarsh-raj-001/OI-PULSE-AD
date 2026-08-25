@@ -124,3 +124,8 @@
 - [x] Add an Exit now control to each rendered open paper position with clear closing feedback and an auditable `manual-exit` reason.
 - [x] Validate manual exits, persistence, portfolio isolation, frontend/docs parity, and paper-only safeguards before review publication.
 - [x] Publish the reviewed paper-only manual-exit feature through a pull request.
+- [x] Recalculate each Call and Put OI delta from exactly its three selected strict ITM contracts and expose the corresponding baseline OI totals.
+- [x] Add side-specific and selected-metric OI percentage-change information to the OI cards and Portfolio 3 signal data.
+- [x] Add configurable absolute-number versus percentage threshold modes to Portfolio 3, including the appropriate threshold input and persisted settings.
+- [x] Validate three-ITM OI deltas, percentage math, Portfolio 3 routing, dashboard parity, and paper-only safeguards before review publication.
+- [ ] Publish the reviewed three-ITM OI percentage and Portfolio 3 threshold-mode update through a pull request.

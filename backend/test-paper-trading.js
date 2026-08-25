@@ -270,6 +270,7 @@ const oiTrade = state.trades.find((trade) => trade.portfolioId === 'portfolio3')
 assert.equal(oiTrade.optionType, 'PUT', 'Portfolio 3 honours its configured trade-side override');
 assert.equal(oiTrade.oiMetric, 'difference');
 assert.equal(oiTrade.oiValueAtSignal, 600, 'Portfolio 3 uses the selected signed ITM OI metric');
+assert.equal(oiTrade.oiThresholdMode, 'number', 'missing legacy mode must default to number-based OI thresholds');
 assert.equal(portfoliosEngine.activeTrades('NIFTY').length, 3, 'all open portfolio positions remain independently subscribable for fresh option LTP monitoring');
 assert.equal(state.portfolioPerformance.portfolio1.totalTrades, 1);
 assert.equal(state.portfolioPerformance.portfolio2.totalTrades, 1);
@@ -289,4 +290,42 @@ state = portfoliosEngine.snapshot();
 assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio2').closeReason, 'portfolio-disabled', 'disabling one portfolio closes only its own open paper position');
 assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio1').status, 'open', 'other portfolios remain active when one portfolio is disabled');
 assert.equal(state.rules.portfolios.portfolio2.enabled, false);
+
+const percentageStore = new MemoryStore();
+const percentageEngine = createPaperTradeEngine({
+  store: percentageStore,
+  rules: {
+    marketHoursEnabled: true,
+    sessionResetEnabled: true,
+    portfolios: {
+      portfolio1: { ...defaults, enabled: false },
+      portfolio2: { ...defaults, enabled: false },
+      portfolio3: { ...defaults, enabled: true, tradeSide: 'auto', oiWindow: 'm5', oiMetric: 'difference', oiThresholdMode: 'percentage', oiThreshold: 0.5 },
+    },
+  },
+  contractLotSizes,
+});
+await percentageEngine.restore();
+const percentagePayload = {
+  windows: {
+    m5: {
+      referenceMode: 'exact-window',
+      bandDeltaCe: 1200,
+      bandDeltaPe: 800,
+      callItmOiChangePct: 1.2,
+      putItmOiChangePct: 0.8,
+      bandDeltaTotalPct: 1,
+      bandDeltaDifferencePct: 0.4,
+    },
+  },
+};
+await percentageEngine.process('NIFTY', percentagePayload, summary(100, 120, 80_000), 80_000);
+assert.equal(percentageEngine.snapshot().trades.length, 0, 'Portfolio 3 percentage mode must compare the selected percentage value, not the larger absolute OI number');
+await percentageEngine.updateSettings({ portfolios: { portfolio3: { oiThreshold: 0.3 } } }, 80_100);
+await percentageEngine.process('NIFTY', percentagePayload, summary(100, 120, 80_200), 80_200);
+const percentageTrade = percentageEngine.snapshot().trades[0];
+assert.equal(percentageTrade.optionType, 'CALL', 'a positive Call % minus Put % threshold uses the upward automatic Call route');
+assert.ok(Math.abs(percentageTrade.oiValueAtSignal - 0.4) < 1e-12, 'percentage difference must equal Call OI percentage minus Put OI percentage');
+assert.equal(percentageTrade.oiThresholdMode, 'percentage', 'paper trade audit data must preserve the threshold unit selected for Portfolio 3');
+assert.equal(percentageTrade.oiThreshold, 0.3);
 console.log('paper trading tests passed');

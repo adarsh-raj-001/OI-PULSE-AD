@@ -128,6 +128,7 @@
   .stat3 .stat:last-child{text-align:right;}
   .stat3 .lbl{font-size:9.5px; letter-spacing:.08em; color:var(--text-faint); text-transform:uppercase; margin-bottom:2px;}
   .stat3 .val{font-size:14px; font-weight:600;}
+  .stat3 .stat-pct{font-family:'IBM Plex Mono',monospace; font-size:9px; line-height:1.35; color:var(--text-faint); margin-top:3px;}
   .atm-row .stat3 .val{font-size:16px;}
 
   .band-total{margin-top:10px; padding:10px 2px; border-top:1px solid var(--border); border-bottom:1px solid var(--border);}
@@ -300,7 +301,8 @@
       <div class="paper-control-grid" id="paperOiControlFields" hidden>
         <div><label for="paperOiWindow">OI window</label><select id="paperOiWindow"><option value="m5">5 Min</option><option value="m30">30 Min</option><option value="h3">3 Hour</option></select></div>
         <div><label for="paperOiMetric">ITM OI trigger basis</label><select id="paperOiMetric"><option value="call">Call ITM OI change</option><option value="put">Put ITM OI change</option><option value="combined">Call + Put ITM OI change</option><option value="difference">Call − Put ITM OI change</option></select></div>
-        <div><label for="paperOiThreshold">Absolute OI threshold</label><input id="paperOiThreshold" type="number" inputmode="decimal" min="0.01" max="10000000000" step="1" /></div>
+        <div><label for="paperOiThresholdMode">OI threshold unit</label><select id="paperOiThresholdMode"><option value="number">OI change number</option><option value="percentage">OI change percentage</option></select></div>
+        <div><label id="paperOiThresholdLabel" for="paperOiThreshold">OI change threshold · number</label><input id="paperOiThreshold" type="number" inputmode="decimal" min="0.01" max="10000000000" step="1" /></div>
       </div>
       <div class="paper-settings-status" id="paperSettingsStatus">Awaiting durable paper-simulator state.</div>
       <button class="primary" id="paperSaveBtn" type="button">Apply paper controls</button>
@@ -702,11 +704,11 @@ function renderPaperTrades(){
   const closed=trades.filter(trade=>trade.status!=='open'&&trade.status!=='pending').sort((a,b)=>Number(b.closedAt||b.openedAt||b.requestedAt||0)-Number(a.closedAt||a.openedAt||a.requestedAt||0));
   const positions=[...pending,...opened].length ? [...pending,...opened].map(trade=>paperTradeCard(trade,true)).join('') : `<div class="paper-empty">No live or pending simulated entry. A new paper entry appears here only after a completed qualifying window and a valid ATM option premium are available.</div>`;
   const history=closed.length ? closed.map(trade=>paperTradeCard(trade,false)).join('') : `<div class="paper-empty">No closed simulated trades yet. Completed, stopped, timed-out, and simulator-disabled records will appear here in most-recent-first order.</div>`;
-  const triggerText=portfolio.strategy==='oi-threshold' ? `${rules.oiMetric||'combined'} ITM OI · |Δ| ≥ ${fmtInt(rules.oiThreshold??1)} · ${({m5:'5 Min',m30:'30 Min',h3:'3 Hour'})[rules.oiWindow]||'5 Min'}` : `${rules.reverseOrders?'Reversed ':'Follow '}strength ≥${rules.strengthThreshold??60}/100`;
+  const triggerText=portfolio.strategy==='oi-threshold' ? `${rules.oiMetric||'combined'} ITM OI ${rules.oiThresholdMode==='percentage'?'%':'number'} · |Δ| ≥ ${rules.oiThresholdMode==='percentage'?fmtPct(rules.oiThreshold??1,2):fmtInt(rules.oiThreshold??1)} · ${({m5:'5 Min',m30:'30 Min',h3:'3 Hour'})[rules.oiWindow]||'5 Min'}` : `${rules.reverseOrders?'Reversed ':'Follow '}strength ≥${rules.strengthThreshold??60}/100`;
   const netClass=performance.netMoney>0?'rise':performance.netMoney<0?'fall':'';
   const realisedClass=performance.realisedMoney>0?'rise':performance.realisedMoney<0?'fall':'';
   const openClass=performance.unrealisedMoney>0?'rise':performance.unrealisedMoney<0?'fall':'';
-  const strategyNote=portfolio.strategy==='oi-threshold'?'Portfolio 3 compares the selected signed ITM OI change against the configured absolute threshold, then uses the selected Call/Put routing.':'This portfolio follows market strength by default: upward pressure buys a Call and downward pressure buys a Put. Enable Reverse orders to swap those entries.';
+  const strategyNote=portfolio.strategy==='oi-threshold'?'Portfolio 3 compares the selected signed three-ITM OI delta against the configured number or percentage threshold, then uses the selected Call/Put routing. Percentage uses the same selected-window three-leg reference OI; Difference % is Call % minus Put %.':'This portfolio follows market strength by default: upward pressure buys a Call and downward pressure buys a Put. Enable Reverse orders to swap those entries.';
   container.innerHTML=`<div class="paper-head"><div class="paper-kicker">PAPER ONLY · NO REAL ORDER</div><div class="paper-title-row"><div class="paper-title">${portfolio.label||'Portfolio 1'} records</div><div class="paper-status">${status}<br>${storageNote}</div></div>${paperPortfolioTabs()}<div class="paper-disclaimer">${strategyNote} Entry, target, and stop-loss use option premium only. This is an automated paper simulation, not a broker order or investment advice.</div></div><section class="paper-pnl-summary" aria-label="Selected portfolio paper profit and loss"><div class="paper-pnl-head"><div><div class="paper-pnl-title">Selected portfolio P&L</div><div class="paper-pnl-sub">Closed and currently open paper positions</div></div><span class="paper-pnl-badge">${performance.totalTrades||0} records</span></div><div class="paper-pnl-grid"><div class="paper-pnl-kpi"><div class="k">Net P&L</div><div class="v ${netClass}">${fmtSignedMoney(performance.netMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Realised</div><div class="v ${realisedClass}">${fmtSignedMoney(performance.realisedMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Open P&L</div><div class="v ${openClass}">${fmtSignedMoney(performance.unrealisedMoney)}</div></div></div><div class="paper-pnl-note">Paper rupee P&L = option-premium movement × configured paper lots × contract units per lot. Current configured values: NIFTY ${contractLotSizes.NIFTY??'—'} units/lot · SENSEX ${contractLotSizes.SENSEX??'—'} units/lot. It excludes brokerage, fees, taxes, margin, and slippage. Closed: ${performance.closedTrades||0} · Wins: ${performance.winningClosedTrades||0} · Losses: ${performance.losingClosedTrades||0}.</div></section><div class="paper-meta"><div class="paper-meta-item"><div class="paper-meta-label">Portfolio</div><div class="paper-meta-value">${portfolio.label||'Portfolio 1'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Simulator</div><div class="paper-meta-value">${rules.enabled?'Enabled':'Disabled'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Lots per simulation</div><div class="paper-meta-value">${rules.lots??10} lots</div></div><div class="paper-meta-item"><div class="paper-meta-label">NIFTY / SENSEX</div><div class="paper-meta-value">${rules.symbolEnabled?.NIFTY!==false?'On':'Off'} / ${rules.symbolEnabled?.SENSEX!==false?'On':'Off'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Trigger</div><div class="paper-meta-value">${triggerText}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Trade side</div><div class="paper-meta-value">${rules.tradeSide||'auto'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium target / stop</div><div class="paper-meta-value">+${rules.targetPoints??2} / −${rules.stopLossPoints??5}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Time / cooldown</div><div class="paper-meta-value">${fmtSeconds(rules.maxAliveSeconds)} / ${fmtSeconds(rules.cooldownSeconds)}</div></div></div><section class="paper-section paper-live-section" aria-label="Live simulated positions"><div class="paper-section-head"><div><div class="paper-section-title">Live simulated positions</div><div class="paper-section-sub">Current option premium and paper-only lifecycle status</div></div><span class="paper-section-count">${opened.length} open</span></div><div class="paper-records">${positions}</div></section><section class="paper-section paper-history-section" aria-label="Closed simulated trade history"><div class="paper-section-head"><div><div class="paper-section-title">Closed trade history</div><div class="paper-section-sub">Most recent completed paper records first</div></div><span class="paper-section-count">${closed.length} closed</span></div><div class="paper-records">${history}</div></section>`;
 }
 
@@ -732,19 +734,21 @@ function renderPaperControls(){
   $('paperCooldown').value=String(rules.cooldownSeconds??0);
   $('paperOiWindow').value=rules.oiWindow||'m5';
   $('paperOiMetric').value=rules.oiMetric||'combined';
+  $('paperOiThresholdMode').value=rules.oiThresholdMode||'number';
   $('paperOiThreshold').value=String(rules.oiThreshold??1);
   const isOiPortfolio=portfolio.strategy==='oi-threshold';
   $('paperStrengthControl').hidden=isOiPortfolio;
   $('paperReverseControl').hidden=isOiPortfolio;
   $('paperTradeSideControl').hidden=!isOiPortfolio;
   $('paperOiControlFields').hidden=!isOiPortfolio;
+  updateOiThresholdControl();
   document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperOiControlFields input, #paperOiControlFields select, #paperEnabled, #paperMarketHoursEnabled, #paperSessionResetEnabled, #paperNiftyEnabled, #paperSensexEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
   document.querySelectorAll('[data-paper-portfolio]').forEach(button=>button.classList.toggle('active',button.dataset.paperPortfolio===selectedPaperPortfolio));
   const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open' && (trade.portfolioId||'portfolio1')===selectedPaperPortfolio).length;
   const descriptions={
     portfolio1:'Portfolio 1 follows market strength: upward pressure buys a Call and downward pressure buys a Put. Enable Reverse orders to swap those entries.',
     portfolio2:'Portfolio 2 follows market strength independently. Enable Reverse orders when you want upward pressure to buy a Put and downward pressure to buy a Call.',
-    portfolio3:'Portfolio 3 waits for the selected signed ITM OI measure to reach the configured absolute threshold. Choose a Call, Put, automatic direction, window, and OI basis below.',
+    portfolio3:'Portfolio 3 waits for the selected signed three-ITM OI measure to reach its configured number or percentage threshold. Percentage uses the same selected-window three-leg baseline; Difference % is Call % minus Put %. Choose a Call, Put, automatic direction, window, and OI basis below.',
   };
   $('paperPortfolioDescription').textContent=descriptions[selectedPaperPortfolio];
   $('paperEnabledNote').textContent=!editable?'Durable PostgreSQL storage is required for controls.':rules.enabled?'Enabled · qualifying signals may create simulated records.':'Disabled · new simulated entries are blocked.';
@@ -754,6 +758,14 @@ function renderPaperControls(){
   const resetText=rootRules.sessionResetEnabled===false?'Full session reset is disabled.':reset?.sessionKey?` Full reset completed for ${reset.sessionKey}.`:' Full OI/chart and paper-history reset is armed for the next 09:15 session.';
   $('paperSettingsStatus').textContent=!editable?'Controls are unavailable until the backend reports ready PostgreSQL storage.':`${sessionText} ${portfolio.label||'Selected portfolio'} has ${openCount} open simulated trade${openCount===1?'':'s'}. NIFTY is ${rules.symbolEnabled?.NIFTY!==false?'enabled':'disabled'}; SENSEX is ${rules.symbolEnabled?.SENSEX!==false?'enabled':'disabled'}.${resetText}`;
 }
+
+function updateOiThresholdControl(){
+  const percentage=$('paperOiThresholdMode').value==='percentage';
+  $('paperOiThresholdLabel').textContent=percentage?'OI change threshold · %':'OI change threshold · number';
+  $('paperOiThreshold').step=percentage?'0.01':'1';
+}
+
+$('paperOiThresholdMode').addEventListener('change',updateOiThresholdControl);
 
 function selectPaperPortfolio(portfolioId){
   if (!['portfolio1','portfolio2','portfolio3'].includes(portfolioId)) return;
@@ -803,7 +815,7 @@ function bandRow(row){
   const call=row.optionSide==='ce';
   const side=call?'Call':'Put';
   const delta=call?row.dCe:row.dPe;
-  return `<div class="band-row itm-band-row"><div class="strikecol"><span class="tag">${side} ITM</span><span class="strike mono">${row.strike}</span></div><div class="stat3"><div class="stat"><div class="lbl">${side} OI change</div><div class="val mono ${trendClass(delta)}">${fmtSigned(delta)}</div></div><div class="stat"><div class="lbl">Moneyness</div><div class="val mono">ITM</div></div><div class="stat"><div class="lbl">Side total</div><div class="val mono ${trendClass(delta)}">${fmtSigned(delta)}</div></div></div></div>`;
+  return `<div class="band-row itm-band-row"><div class="strikecol"><span class="tag">${side} ITM</span><span class="strike mono">${row.strike}</span></div><div class="stat3"><div class="stat"><div class="lbl">${side} OI Δ</div><div class="val mono ${trendClass(delta)}">${fmtSigned(delta)}</div></div><div class="stat"><div class="lbl">OI Δ %</div><div class="val mono ${trendClass(row.oiChangePct)}">${fmtPct(row.oiChangePct,2)}</div></div><div class="stat"><div class="lbl">Reference OI</div><div class="val mono">${fmtInt(row.referenceOi)}</div></div></div></div>`;
 }
 
 function compactDuration(ms){
@@ -857,6 +869,9 @@ function renderCards(payload){
     const atmStrike=atmNumeric===null ? '—' : fmtInt(atmNumeric);
     const isOpen = expanded[w.key];
     const totalCls = trendClass(win.bandDeltaTotal);
+    const callPct=finite(win.callItmOiChangePct), putPct=finite(win.putItmOiChangePct), totalPct=finite(win.bandDeltaTotalPct);
+    const callBaseline=finite(win.callItmOiBaseline), putBaseline=finite(win.putItmOiBaseline);
+    const totalBaseline=callBaseline===null||putBaseline===null ? null : callBaseline+putBaseline;
 
     card.innerHTML = `
       <div class="card-top">
@@ -866,16 +881,16 @@ function renderCards(payload){
         </div>
       </div>
       <div class="band-total">
-        <span class="l">${completeStrictBand?'Combined change · exactly 3 strict ITM Calls + 3 strict ITM Puts':'Strict ITM OI band pending · requires 3 Calls + 3 Puts with ATM excluded'}</span>
+        <span class="l">${completeStrictBand?'OI delta · exactly 3 strict ITM Calls + 3 strict ITM Puts':'Strict ITM OI band pending · requires 3 Calls + 3 Puts with ATM excluded'}</span>
         ${completeStrictBand?`<div class="itm-selection" aria-label="Strict in-the-money strike selection. ATM is excluded.">
           <div class="itm-selection-side call"><div class="itm-selection-label"><strong>3 Call ITM</strong> · below underlying</div><div class="itm-chips">${callItmStrikes.map(strike=>`<span class="itm-chip call">${fmtInt(strike)}</span>`).join('')}</div></div>
           <div class="atm-excluded"><span class="k">ATM excluded</span><span class="v">${atmStrike}</span><span class="n">No OI counted</span></div>
           <div class="itm-selection-side put"><div class="itm-selection-label"><strong>3 Put ITM</strong> · above underlying</div><div class="itm-chips">${putItmStrikes.map(strike=>`<span class="itm-chip put">${fmtInt(strike)}</span>`).join('')}</div></div>
         </div>`:`<div class="itm-selection" aria-label="Strict in-the-money selection is waiting for a complete server band."><div class="itm-selection-side call"><div class="itm-selection-label"><strong>ATM excluded</strong> · ${atmStrike}</div><div class="itm-selection-label">No partial OI calculation is shown.</div></div><div class="atm-excluded"><span class="k">Strict ITM only</span><span class="v">3 + 3</span><span class="n">Awaiting six legs</span></div><div class="itm-selection-side put"><div class="itm-selection-label"><strong>Server band</strong> · incomplete</div><div class="itm-selection-label">Refreshes automatically when complete.</div></div></div>`}
         <div class="stat3">
-          <div class="stat"><div class="lbl">Call OI</div><div class="val mono ${trendClass(bandDeltaCe)}">${fmtSigned(bandDeltaCe)}</div></div>
-          <div class="stat"><div class="lbl">Put OI</div><div class="val mono ${trendClass(bandDeltaPe)}">${fmtSigned(bandDeltaPe)}</div></div>
-          <div class="stat"><div class="lbl">Total</div><div class="val mono ${totalCls}">${fmtSigned(win.bandDeltaTotal)}</div></div>
+          <div class="stat"><div class="lbl">Call OI Δ · 3 ITM</div><div class="val mono ${trendClass(bandDeltaCe)}">${fmtSigned(bandDeltaCe)}</div><div class="stat-pct">${callPct===null?'—':fmtPct(callPct,2)} · base ${callBaseline===null?'—':fmtInt(callBaseline)}</div></div>
+          <div class="stat"><div class="lbl">Put OI Δ · 3 ITM</div><div class="val mono ${trendClass(bandDeltaPe)}">${fmtSigned(bandDeltaPe)}</div><div class="stat-pct">${putPct===null?'—':fmtPct(putPct,2)} · base ${putBaseline===null?'—':fmtInt(putBaseline)}</div></div>
+          <div class="stat"><div class="lbl">Combined Δ · 6 ITM</div><div class="val mono ${totalCls}">${fmtSigned(win.bandDeltaTotal)}</div><div class="stat-pct">${totalPct===null?'—':fmtPct(totalPct,2)} · base ${totalBaseline===null?'—':fmtInt(totalBaseline)}</div></div>
         </div>
       </div>
       <button class="expand-toggle ${isOpen?'open':''}" data-win="${w.key}">
@@ -1166,6 +1181,7 @@ async function savePaperControls({switchChanged=false}={}){
     nextPortfolio.tradeSide=$('paperTradeSide').value;
     nextPortfolio.oiWindow=$('paperOiWindow').value;
     nextPortfolio.oiMetric=$('paperOiMetric').value;
+    nextPortfolio.oiThresholdMode=$('paperOiThresholdMode').value;
     nextPortfolio.oiThreshold=Number($('paperOiThreshold').value);
   }else{
     nextPortfolio.reverseOrders=$('paperReverseOrders').checked;

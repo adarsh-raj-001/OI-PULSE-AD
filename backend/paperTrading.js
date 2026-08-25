@@ -9,6 +9,7 @@ const MAX_LOTS = 100_000;
 const MAX_PREMIUM_OFFSET = 10_000;
 const OI_WINDOWS = ['m5', 'm30', 'h3'];
 const OI_METRICS = ['call', 'put', 'combined', 'difference'];
+const OI_THRESHOLD_MODES = ['number', 'percentage'];
 const TRADE_SIDES = ['auto', 'call', 'put'];
 
 export const PAPER_PORTFOLIOS = {
@@ -73,7 +74,7 @@ function defaultPortfolio(id) {
     cooldownSeconds: 0,
     strategy: meta.strategy,
   };
-  if (id === 'portfolio3') return { ...shared, tradeSide: 'auto', oiWindow: 'm5', oiMetric: 'combined', oiThreshold: 1, directionMode: 'oi' };
+  if (id === 'portfolio3') return { ...shared, tradeSide: 'auto', oiWindow: 'm5', oiMetric: 'combined', oiThresholdMode: 'number', oiThreshold: 1, directionMode: 'oi' };
   return { ...shared, reverseOrders: id === 'portfolio2' };
 }
 
@@ -101,6 +102,7 @@ function normalizePortfolio(input = {}, base = {}, id) {
     tradeSide: selectValue(input.tradeSide, TRADE_SIDES, fallback.tradeSide, 'Trade side'),
     oiWindow: selectValue(input.oiWindow, OI_WINDOWS, fallback.oiWindow, 'OI window'),
     oiMetric: selectValue(input.oiMetric, OI_METRICS, fallback.oiMetric, 'OI metric'),
+    oiThresholdMode: selectValue(input.oiThresholdMode, OI_THRESHOLD_MODES, fallback.oiThresholdMode, 'OI threshold mode'),
     oiThreshold: positiveNumber(input.oiThreshold, fallback.oiThreshold, 'OI threshold'),
     directionMode: 'oi',
   };
@@ -159,9 +161,10 @@ function marketStrengthSignal(payload, portfolio) {
   };
 }
 
-function oiMetricValue(window, metric) {
-  const call = finite(window?.bandDeltaCe);
-  const put = finite(window?.bandDeltaPe);
+function oiMetricValue(window, metric, thresholdMode) {
+  const percentage = thresholdMode === 'percentage';
+  const call = finite(percentage ? window?.callItmOiChangePct : window?.bandDeltaCe);
+  const put = finite(percentage ? window?.putItmOiChangePct : window?.bandDeltaPe);
   if (call === null || put === null) return null;
   if (metric === 'call') return call;
   if (metric === 'put') return put;
@@ -173,17 +176,18 @@ function oiThresholdSignal(payload, portfolio) {
   const labels = { m5: '5 Min', m30: '30 Min', h3: '3 Hour' };
   const window = payload?.windows?.[portfolio.oiWindow];
   if (!window || window.referenceMode !== 'exact-window') return null;
-  const value = oiMetricValue(window, portfolio.oiMetric);
+  const value = oiMetricValue(window, portfolio.oiMetric, portfolio.oiThresholdMode);
   if (value === null || Math.abs(value) < portfolio.oiThreshold) return null;
   return {
     direction: value >= 0 ? 'up' : 'down',
     optionSide: value >= 0 ? 'ce' : 'pe',
     window: { key: portfolio.oiWindow, label: labels[portfolio.oiWindow], window },
     intensity: null,
-    label: `${portfolio.oiMetric} ITM OI threshold`,
+    label: `${portfolio.oiMetric} ITM OI ${portfolio.oiThresholdMode === 'percentage' ? 'percentage' : 'number'} threshold`,
     triggerType: 'oi-threshold',
     oiMetric: portfolio.oiMetric,
     oiValue: value,
+    oiThresholdMode: portfolio.oiThresholdMode,
   };
 }
 
@@ -486,6 +490,7 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
       triggerType: signal.triggerType,
       oiMetric: signal.oiMetric || null,
       oiValueAtSignal: signal.oiValue ?? null,
+      oiThresholdMode: signal.oiThresholdMode || null,
       oiThreshold: portfolio.strategy === 'oi-threshold' ? portfolio.oiThreshold : null,
       cooldownSecondsAtEntry: portfolio.cooldownSeconds,
       source: 'dhan-live-paper-simulation',

@@ -65,6 +65,15 @@ assert.equal(strictBand.band.length, 6, 'the aggregate must contain exactly thre
 assert.ok(strictBand.band.every((row) => row.strike !== 24150 && row.moneyness === 'ITM'), 'ATM must never be included in the aggregate');
 assert.equal(strictBand.bandDeltaCe, 30);
 assert.equal(strictBand.bandDeltaPe, 30);
+assert.equal(strictBand.callItmOiBaseline, 303, 'Call percentage baseline must contain only the three current strict-ITM Calls');
+assert.equal(strictBand.putItmOiBaseline, 615, 'Put percentage baseline must contain only the three current strict-ITM Puts');
+assert.equal(strictBand.callItmOiCurrent, 333);
+assert.equal(strictBand.putItmOiCurrent, 645);
+assert.ok(Math.abs(strictBand.callItmOiChangePct - ((30 / 303) * 100)) < 1e-12, 'Call OI percentage must use the selected three-Call reference total');
+assert.ok(Math.abs(strictBand.putItmOiChangePct - ((30 / 615) * 100)) < 1e-12, 'Put OI percentage must use the selected three-Put reference total');
+assert.ok(Math.abs(strictBand.bandDeltaTotalPct - ((60 / 918) * 100)) < 1e-12, 'Combined OI percentage must use all six selected reference OI values');
+assert.ok(Math.abs(strictBand.bandDeltaDifferencePct - (strictBand.callItmOiChangePct - strictBand.putItmOiChangePct)) < 1e-12, 'Difference percentage must equal Call percentage minus Put percentage');
+assert.ok(strictBand.band.every((row) => Number.isFinite(row.referenceOi) && Number.isFinite(row.currentOi) && Number.isFinite(row.oiChangePct)), 'every displayed strict ITM leg must retain its selected-window OI baseline and percentage delta');
 
 const missingStrictLeg = strictItmSummary(61_000, 10);
 delete missingStrictLeg.strikes[24300];
