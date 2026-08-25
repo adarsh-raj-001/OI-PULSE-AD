@@ -15,7 +15,7 @@
     ]
   },
 
-  "_strikesEachSide_comment": "How many strikes above/below the at-the-money strike to track. 3 = ATM + 3 up + 3 down = 7 strikes total.",
+  "_strikesEachSide_comment": "How many strictly in-the-money contracts to track per option side. 3 = three Call strikes below the underlying and three Put strikes above it; ATM and OTM legs are excluded.",
   "strikesEachSide": 3,
 
   "_pollIntervalMs_comment": "Observed production 429 responses show this Dhan account must treat Option Chain as one global request every 3 seconds. The backend serializes every underlying and uses a 100ms safety buffer; event-driven chart updates still come only from the active-band WebSocket.",
@@ -28,14 +28,14 @@
   "historyMaxMs": 12960000,
   "_historyPersistIntervalMs_comment": "When OI_HISTORY_DATABASE_URL is configured, compact raw snapshots are written at this interval for restart-safe 5m/30m/3h recovery. In-memory live calculations still use every event bucket.",
   "historyPersistIntervalMs": 5000,
-  "_chartHistoryMaxMs_comment": "Compact near-ATM chart points retained independently from raw OI snapshots: 10 hours of event-driven Dhan live-feed updates, coalesced into short browser-safe time buckets.",
+  "_chartHistoryMaxMs_comment": "Compact ITM-only chart points retained independently from raw OI snapshots: 10 hours of event-driven Dhan live-feed updates, coalesced into short browser-safe time buckets.",
   "chartHistoryMaxMs": 36000000,
-  "_liveFeedEnabled_comment": "When dataSource is dhan, use the authenticated server-side Full Packet WebSocket for active ATM-band price/OI/volume/5-level depth. Option Chain REST remains every 3s for full-chain context and reconciliation.",
+  "_liveFeedEnabled_comment": "When dataSource is dhan, use the authenticated server-side Full Packet WebSocket for the active ITM Call and Put contract sets plus open paper positions. Option Chain REST remains every 3s for full-chain context and reconciliation.",
   "liveFeedEnabled": true,
   "_liveFeedEventBucketMs_comment": "Replace repeated chart points inside this short bucket; preserves responsive event-driven history without several same-second points competing for one chart timestamp.",
   "liveFeedEventBucketMs": 1000,
 
-  "_thresholds_comment": "Notification fires when the combined OI change across the tracked 7-strike band (ATM +/-3) crosses this many contracts, for that window. Set per window since 5m moves are naturally smaller than 3h moves.",
+  "_thresholds_comment": "Notification fires when the combined OI change across the tracked ITM Call and Put contracts crosses this many contracts, for that window. Set per window since 5m moves are naturally smaller than 3h moves.",
   "thresholds": {
     "m5": 75000,
     "m30": 200000,
@@ -44,7 +44,7 @@
 
   "_notifyCooldownMs_comment": "Minimum gap between two notifications for the same symbol+window, so a sustained move above threshold doesn't spam you every poll cycle.",
   "notifyCooldownMs": 600000,
-  "_paperTrading_comment": "Paper-only simulator defaults. Screen controls can persist enabled state, per-symbol enablement, allowed lot count, trigger level, target, stop-loss, lifetime, and cooldown when PostgreSQL is configured. No broker connection or Dhan order endpoint is used.",
+  "_paperTrading_comment": "Paper-only simulator defaults. Each persisted portfolio has independent symbols, lots, entry, risk, and trigger settings. No broker connection or Dhan order endpoint is used.",
   "paperTrading": {
     "enabled": true,
     "lots": 10,
@@ -59,6 +59,11 @@
     "targetPoints": 2,
     "stopLossPoints": 5,
     "maxAliveSeconds": 0,
-    "cooldownSeconds": 0
+    "cooldownSeconds": 0,
+    "portfolios": {
+      "portfolio1": { "enabled": true, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
+      "portfolio2": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
+      "portfolio3": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0, "oiWindow": "m5", "oiMetric": "combined", "oiThreshold": 1 }
+    }
   }
 }

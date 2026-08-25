@@ -13,12 +13,14 @@ const snapshotOne = {
 
 const first = buildChartPoint(snapshotOne, null, 1);
 assert.equal(first.atmStrike, 110);
-assert.equal(first.callOi, 330);
-assert.equal(first.putOi, 630);
+assert.deepEqual(first.callItmStrikes, [100]);
+assert.deepEqual(first.putItmStrikes, [120]);
+assert.equal(first.callOi, 100);
+assert.equal(first.putOi, 220);
 assert.equal(first.callOiChange, null);
-assert.equal(first.callBidAskDifference, 9);
-assert.equal(first.putBidAskDifference, -12);
-assert.equal(first.callPrice, 12);
+assert.equal(first.callBidAskDifference, 5);
+assert.equal(first.putBidAskDifference, -2);
+assert.equal(first.callPrice, 10);
 
 const snapshotTwo = structuredClone(snapshotOne);
 snapshotTwo.t = 4_000;
@@ -27,7 +29,8 @@ snapshotTwo.strikes[110].ce.oi = 118;
 snapshotTwo.strikes[120].pe.oi = 230;
 const second = buildChartPoint(snapshotTwo, first, 1);
 assert.equal(second.underlyingPriceChange, 2);
-assert.equal(second.callOiChange, 8);
+assert.deepEqual(second.callItmStrikes, [110]);
+assert.equal(second.callOiChange, 18);
 assert.equal(second.putOiChange, 10);
 
 const retained = [];

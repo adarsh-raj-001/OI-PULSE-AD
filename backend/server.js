@@ -19,7 +19,7 @@ import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
 import { createHistoryStore } from './historyStore.js';
 import { createPaperTradeStore } from './paperTradeStore.js';
 import { createPaperTradeEngine } from './paperTrading.js';
-import { currentBaselineDelta, exactWindowDelta, nearestStrikeIndex, sortedStrikes } from './oiWindows.js';
+import { currentBaselineDelta, exactWindowDelta, itmStrikeSets, sortedStrikes } from './oiWindows.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
@@ -168,8 +168,8 @@ function recordSnapshot(name, summary, t, { eventDriven = false, restState: next
 
 function activeBandSubscriptions(sym, summary) {
   const strikes = sortedStrikes(summary.strikes);
-  const atmIndex = nearestStrikeIndex(strikes, summary.underlyingPrice);
-  if (atmIndex === null) return [];
+  const { callStrikes, putStrikes } = itmStrikeSets(strikes, summary.underlyingPrice, config.strikesEachSide);
+  if (!callStrikes.length && !putStrikes.length) return [];
   const optionSegment = sym.name === 'SENSEX' ? 'BSE_FNO' : 'NSE_FNO';
   const subscriptions = [{
     exchangeSegment: 'IDX_I',
@@ -177,11 +177,9 @@ function activeBandSubscriptions(sym, summary) {
     symbol: sym.name,
     kind: 'underlying',
   }];
-  for (let offset = -config.strikesEachSide; offset <= config.strikesEachSide; offset += 1) {
-    const strike = strikes[atmIndex + offset];
-    const legs = summary.strikes[strike];
-    for (const side of ['ce', 'pe']) {
-      const securityId = Number(legs?.[side]?.securityId);
+  for (const [side, selected] of [['ce', callStrikes], ['pe', putStrikes]]) {
+    for (const strike of selected) {
+      const securityId = Number(summary.strikes[strike]?.[side]?.securityId);
       if (!Number.isFinite(securityId)) continue;
       subscriptions.push({ exchangeSegment: optionSegment, securityId, symbol: sym.name, kind: 'option', strike, side });
     }
@@ -211,20 +209,23 @@ function refreshLiveSubscriptions() {
     for (const instrument of activeBandSubscriptions(sym, summary)) {
       addLiveSubscription(instrument);
     }
-    // Retain the original option subscription until its simulated position is
-    // closed, even if ATM moves. Target/stop evaluation remains option-LTP based.
-    const openTrade = paperTrading.activeTrade(sym.name);
-    if (!openTrade || !Number.isFinite(openTrade.securityId)) continue;
+    // Retain every original paper option subscription until its simulated
+    // position closes, even if ATM moves. Each portfolio is monitored from its
+    // own fresh option LTP and never places a broker order.
     const optionSegment = sym.name === 'SENSEX' ? 'BSE_FNO' : 'NSE_FNO';
-    addLiveSubscription({
-      exchangeSegment: optionSegment,
-      securityId: openTrade.securityId,
-      symbol: sym.name,
-      kind: 'option',
-      strike: openTrade.strike,
-      side: openTrade.optionSide,
-      paperTracking: true,
-    });
+    for (const openTrade of paperTrading.activeTrades(sym.name)) {
+      if (!Number.isFinite(openTrade.securityId)) continue;
+      addLiveSubscription({
+        exchangeSegment: optionSegment,
+        securityId: openTrade.securityId,
+        symbol: sym.name,
+        kind: 'option',
+        strike: openTrade.strike,
+        side: openTrade.optionSide,
+        portfolioId: openTrade.portfolioId,
+        paperTracking: true,
+      });
+    }
   }
   liveFeed.setSubscriptions(subscriptions);
   liveFeed.start();

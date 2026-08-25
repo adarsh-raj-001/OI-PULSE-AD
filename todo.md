@@ -98,4 +98,10 @@
 - [x] Add an explicit persisted full-session-reset setting that clears OI baselines/chart history and paper-trading records at the session start.
 - [x] Ensure open or pending paper entries are closed/cancelled with an auditable session-reset reason before records are cleared.
 - [x] Validate reset idempotency, session-time behavior, PostgreSQL persistence, request safeguards, and dashboard status.
-- [ ] Publish the reviewed full-session-reset behavior through a pull request.
+- [x] Publish the reviewed full-session-reset behavior through a pull request.
+- [x] Replace near-ATM OI calculation bands with three ITM Call strikes below the underlying price and three ITM Put strikes above it, excluding ATM and OTM strikes.
+- [x] Add three separately persisted paper-trading portfolios with independent trigger and risk settings while retaining Portfolio 1 as the current strategy.
+- [x] Add the inverse-direction strategy in Portfolio 2 and configurable OI-window, threshold, and Call/Put routing for Portfolio 3.
+- [x] Diagnose and repair the graph interaction or rendering defect without weakening retained-history or Dhan polling safeguards.
+- [x] Validate ITM OI calculations, portfolio isolation, paper-only safety, graph behavior, and frontend/docs parity before review publication.
+- [ ] Publish the reviewed ITM OI, multi-portfolio paper-simulator, and graph repair changes through a pull request.

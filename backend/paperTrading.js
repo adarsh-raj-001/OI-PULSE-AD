@@ -2,10 +2,20 @@ import { randomUUID } from 'node:crypto';
 import { nearestStrikeIndex, sortedStrikes } from './oiWindows.js';
 
 const PAPER_SYMBOLS = ['NIFTY', 'SENSEX'];
+const PORTFOLIO_IDS = ['portfolio1', 'portfolio2', 'portfolio3'];
 const MAX_SECONDS = 86_400;
 const MAX_OPTION_QUOTE_AGE_MS = 15_000;
 const MAX_LOTS = 100_000;
 const MAX_PREMIUM_OFFSET = 10_000;
+const OI_WINDOWS = ['m5', 'm30', 'h3'];
+const OI_METRICS = ['call', 'put', 'combined', 'difference'];
+const TRADE_SIDES = ['auto', 'call', 'put'];
+
+export const PAPER_PORTFOLIOS = {
+  portfolio1: { id: 'portfolio1', label: 'Portfolio 1 · Follow strength', strategy: 'market-strength', directionMode: 'follow' },
+  portfolio2: { id: 'portfolio2', label: 'Portfolio 2 · Inverse strength', strategy: 'market-strength', directionMode: 'inverse' },
+  portfolio3: { id: 'portfolio3', label: 'Portfolio 3 · OI threshold', strategy: 'oi-threshold', directionMode: 'oi' },
+};
 
 const finite = (value) => {
   const number = Number(value);
@@ -15,7 +25,7 @@ const finite = (value) => {
 function positiveNumber(value, fallback, name) {
   if (value === undefined || value === null || value === '') return fallback;
   const parsed = finite(value);
-  if (parsed === null || parsed <= 0 || parsed > 10_000) throw new Error(`${name} must be a positive number.`);
+  if (parsed === null || parsed <= 0 || parsed > 10_000_000_000) throw new Error(`${name} must be a positive number.`);
   return parsed;
 }
 
@@ -42,30 +52,76 @@ function premiumOffset(value, fallback) {
   return parsed;
 }
 
-function normalizeRules(input = {}, base = {}) {
-  const enabled = input.enabled === undefined ? base.enabled === true : input.enabled === true;
-  const lots = positiveWholeNumber(input.lots, base.lots ?? 10, 'Lots', MAX_LOTS);
-  const strengthThreshold = positiveWholeNumber(input.strengthThreshold, base.strengthThreshold ?? 60, 'Strength threshold', 100);
+function selectValue(value, allowed, fallback, name) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (!allowed.includes(value)) throw new Error(`${name} is invalid.`);
+  return value;
+}
+
+function defaultPortfolio(id) {
+  const meta = PAPER_PORTFOLIOS[id];
+  return {
+    id,
+    enabled: false,
+    lots: 10,
+    symbolEnabled: Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, true])),
+    strengthThreshold: 60,
+    tradeSide: 'auto',
+    entryPremiumOffset: 0,
+    targetPoints: 2,
+    stopLossPoints: 5,
+    maxAliveSeconds: 0,
+    cooldownSeconds: 0,
+    oiWindow: 'm5',
+    oiMetric: 'combined',
+    oiThreshold: 1,
+    strategy: meta.strategy,
+    directionMode: meta.directionMode,
+  };
+}
+
+function normalizePortfolio(input = {}, base = {}, id) {
+  const fallback = { ...defaultPortfolio(id), ...(base || {}) };
   const sourceSymbolEnabled = {
-    ...(base.symbolEnabled || {}),
+    ...(fallback.symbolEnabled || {}),
     ...(input.symbolEnabled && typeof input.symbolEnabled === 'object' ? input.symbolEnabled : {}),
   };
-  const symbolEnabled = Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, sourceSymbolEnabled[symbol] !== false]));
   return {
-    enabled,
-    lots,
-    symbolEnabled,
+    id,
+    enabled: input.enabled === undefined ? fallback.enabled === true : input.enabled === true,
+    lots: positiveWholeNumber(input.lots, fallback.lots, 'Lots', MAX_LOTS),
+    symbolEnabled: Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, sourceSymbolEnabled[symbol] !== false])),
+    strengthThreshold: positiveWholeNumber(input.strengthThreshold, fallback.strengthThreshold, 'Strength threshold', 100),
+    tradeSide: selectValue(input.tradeSide, TRADE_SIDES, fallback.tradeSide, 'Trade side'),
+    entryPremiumOffset: premiumOffset(input.entryPremiumOffset, fallback.entryPremiumOffset),
+    targetPoints: positiveNumber(input.targetPoints, fallback.targetPoints, 'Target'),
+    stopLossPoints: positiveNumber(input.stopLossPoints, fallback.stopLossPoints, 'Stop-loss'),
+    maxAliveSeconds: wholeSeconds(input.maxAliveSeconds, fallback.maxAliveSeconds, 'Maximum alive time'),
+    cooldownSeconds: wholeSeconds(input.cooldownSeconds, fallback.cooldownSeconds, 'Cooldown'),
+    oiWindow: selectValue(input.oiWindow, OI_WINDOWS, fallback.oiWindow, 'OI window'),
+    oiMetric: selectValue(input.oiMetric, OI_METRICS, fallback.oiMetric, 'OI metric'),
+    oiThreshold: positiveNumber(input.oiThreshold, fallback.oiThreshold, 'OI threshold'),
+    strategy: PAPER_PORTFOLIOS[id].strategy,
+    directionMode: PAPER_PORTFOLIOS[id].directionMode,
+  };
+}
+
+function normalizeRules(input = {}, base = {}) {
+  const inputPortfolioMap = input.portfolios && typeof input.portfolios === 'object' ? input.portfolios : null;
+  const basePortfolioMap = base.portfolios && typeof base.portfolios === 'object' ? base.portfolios : {};
+  const portfolios = Object.fromEntries(PORTFOLIO_IDS.map((id) => {
+    const requested = inputPortfolioMap ? (inputPortfolioMap[id] || {}) : (id === 'portfolio1' ? input : {});
+    return [id, normalizePortfolio(requested, basePortfolioMap[id] || defaultPortfolio(id), id)];
+  }));
+  const lastSessionReset = input.lastSessionReset && typeof input.lastSessionReset === 'object'
+    ? { ...input.lastSessionReset }
+    : base.lastSessionReset && typeof base.lastSessionReset === 'object' ? { ...base.lastSessionReset } : null;
+  return {
     marketHoursEnabled: input.marketHoursEnabled === undefined ? base.marketHoursEnabled !== false : input.marketHoursEnabled === true,
     sessionResetEnabled: input.sessionResetEnabled === undefined ? base.sessionResetEnabled !== false : input.sessionResetEnabled === true,
-    lastSessionReset: input.lastSessionReset && typeof input.lastSessionReset === 'object'
-      ? { ...input.lastSessionReset }
-      : base.lastSessionReset && typeof base.lastSessionReset === 'object' ? { ...base.lastSessionReset } : null,
-    strengthThreshold,
-    entryPremiumOffset: premiumOffset(input.entryPremiumOffset, base.entryPremiumOffset ?? 0),
-    targetPoints: positiveNumber(input.targetPoints, base.targetPoints ?? 2, 'Target'),
-    stopLossPoints: positiveNumber(input.stopLossPoints, base.stopLossPoints ?? 5, 'Stop-loss'),
-    maxAliveSeconds: wholeSeconds(input.maxAliveSeconds, base.maxAliveSeconds ?? 0, 'Maximum alive time'),
-    cooldownSeconds: wholeSeconds(input.cooldownSeconds, base.cooldownSeconds ?? 0, 'Cooldown'),
+    lastSessionReset,
+    portfolios,
+    enabled: Object.values(portfolios).some((portfolio) => portfolio.enabled === true),
   };
 }
 
@@ -77,7 +133,7 @@ function strengthDirection(strength) {
   return null;
 }
 
-function preferredSignal(payload, strengthThreshold) {
+function marketStrengthSignal(payload, portfolio) {
   const entries = [
     ['m5', '5 Min'],
     ['m30', '30 Min'],
@@ -87,12 +143,59 @@ function preferredSignal(payload, strengthThreshold) {
   const preferred = entries.find((entry) => {
     const strength = entry.window.marketStrength;
     const intensity = finite(strength.intensity);
-    return intensity !== null && intensity >= strengthThreshold && strengthDirection(strength) !== null;
+    return intensity !== null && intensity >= portfolio.strengthThreshold && strengthDirection(strength) !== null;
   });
   const direction = strengthDirection(preferred?.window?.marketStrength);
-  if (direction === 'up') return { direction, optionSide: 'ce', window: preferred, intensity: preferred.window.marketStrength.intensity };
-  if (direction === 'down') return { direction, optionSide: 'pe', window: preferred, intensity: preferred.window.marketStrength.intensity };
-  return null;
+  if (!direction) return null;
+  const followSide = direction === 'up' ? 'ce' : 'pe';
+  return {
+    direction,
+    optionSide: portfolio.directionMode === 'inverse' ? (followSide === 'ce' ? 'pe' : 'ce') : followSide,
+    window: preferred,
+    intensity: preferred.window.marketStrength.intensity,
+    label: preferred.window.marketStrength.label,
+    triggerType: portfolio.directionMode === 'inverse' ? 'inverse-market-strength' : 'market-strength',
+  };
+}
+
+function oiMetricValue(window, metric) {
+  const call = finite(window?.bandDeltaCe);
+  const put = finite(window?.bandDeltaPe);
+  if (call === null || put === null) return null;
+  if (metric === 'call') return call;
+  if (metric === 'put') return put;
+  if (metric === 'difference') return call - put;
+  return call + put;
+}
+
+function oiThresholdSignal(payload, portfolio) {
+  const labels = { m5: '5 Min', m30: '30 Min', h3: '3 Hour' };
+  const window = payload?.windows?.[portfolio.oiWindow];
+  if (!window || window.referenceMode !== 'exact-window') return null;
+  const value = oiMetricValue(window, portfolio.oiMetric);
+  if (value === null || Math.abs(value) < portfolio.oiThreshold) return null;
+  return {
+    direction: value >= 0 ? 'up' : 'down',
+    optionSide: value >= 0 ? 'ce' : 'pe',
+    window: { key: portfolio.oiWindow, label: labels[portfolio.oiWindow], window },
+    intensity: null,
+    label: `${portfolio.oiMetric} ITM OI threshold`,
+    triggerType: 'oi-threshold',
+    oiMetric: portfolio.oiMetric,
+    oiValue: value,
+  };
+}
+
+function preferredSignal(payload, portfolio) {
+  return portfolio.strategy === 'oi-threshold'
+    ? oiThresholdSignal(payload, portfolio)
+    : marketStrengthSignal(payload, portfolio);
+}
+
+function configuredOptionSide(signal, portfolio) {
+  if (portfolio.tradeSide === 'call') return 'ce';
+  if (portfolio.tradeSide === 'put') return 'pe';
+  return signal.optionSide;
 }
 
 function liveOptionQuote(leg, timestamp) {
@@ -126,30 +229,24 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     const size = finite(contractLotSizes[symbol]);
     return [symbol, size !== null && size > 0 ? size : 1];
   }));
-  let currentRules = normalizeRules(rules, {
-    enabled: false,
-    lots: 10,
-    symbolEnabled: Object.fromEntries(PAPER_SYMBOLS.map((symbol) => [symbol, true])),
-    marketHoursEnabled: true,
-    sessionResetEnabled: true,
-    lastSessionReset: null,
-    strengthThreshold: 60,
-    entryPremiumOffset: 0,
-    targetPoints: 2,
-    stopLossPoints: 5,
-    maxAliveSeconds: 0,
-    cooldownSeconds: 0,
-  });
+  let currentRules = normalizeRules(rules, { marketHoursEnabled: true, sessionResetEnabled: true, lastSessionReset: null, portfolios: {} });
   let marketSession = { enabled: currentRules.marketHoursEnabled, active: true, reason: 'starting', timeZone: 'Asia/Kolkata', opensAt: '09:15', closesAt: '15:30' };
-  let enabled = false;
+  let enabled = currentRules.enabled === true;
   let queue = Promise.resolve();
 
-  function activeTrade(symbol) {
-    return trades.find((trade) => trade.symbol === symbol && trade.status === 'open') || null;
+  const portfolioList = () => PORTFOLIO_IDS.map((id) => currentRules.portfolios[id]);
+  const stateKey = (portfolioId, symbol) => `${portfolioId}:${symbol}`;
+
+  function activeTrade(symbol, portfolioId = null) {
+    return trades.find((trade) => trade.symbol === symbol && trade.status === 'open' && (!portfolioId || trade.portfolioId === portfolioId)) || null;
   }
 
-  function activeEntry(symbol) {
-    return trades.find((trade) => trade.symbol === symbol && (trade.status === 'open' || trade.status === 'pending')) || null;
+  function activeTrades(symbol) {
+    return trades.filter((trade) => trade.symbol === symbol && trade.status === 'open');
+  }
+
+  function activeEntry(symbol, portfolioId = null) {
+    return trades.find((trade) => trade.symbol === symbol && (trade.status === 'open' || trade.status === 'pending') && (!portfolioId || trade.portfolioId === portfolioId)) || null;
   }
 
   function tradePnl(trade) {
@@ -165,9 +262,10 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     return { points, money: points === null ? null : points * lots * contractLotSize, contractLotSize };
   }
 
-  function performance() {
-    const totals = { totalTrades: trades.length, pendingEntries: 0, openTrades: 0, closedTrades: 0, winningClosedTrades: 0, losingClosedTrades: 0, realisedPoints: 0, unrealisedPoints: 0, netPoints: 0, realisedMoney: 0, unrealisedMoney: 0, netMoney: 0 };
-    for (const trade of trades) {
+  function performance(portfolioId = null) {
+    const selected = portfolioId ? trades.filter((trade) => trade.portfolioId === portfolioId) : trades;
+    const totals = { totalTrades: selected.length, pendingEntries: 0, openTrades: 0, closedTrades: 0, winningClosedTrades: 0, losingClosedTrades: 0, realisedPoints: 0, unrealisedPoints: 0, netPoints: 0, realisedMoney: 0, unrealisedMoney: 0, netMoney: 0 };
+    for (const trade of selected) {
       if (trade.status === 'pending') { totals.pendingEntries += 1; continue; }
       const pnl = tradePnl(trade);
       const isOpen = trade.status === 'open';
@@ -183,7 +281,21 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
   }
 
   function snapshot() {
-    return { enabled, storage: store.getStatus(), rules: { ...currentRules }, lastSessionReset: currentRules.lastSessionReset ? { ...currentRules.lastSessionReset } : null, marketSession: { ...marketSession }, contractLotSizes: { ...currentContractLotSizes }, trades: [...trades].sort((a, b) => Number(b.requestedAt || b.openedAt || 0) - Number(a.requestedAt || a.openedAt || 0)), performance: performance() };
+    const portfolioPerformance = Object.fromEntries(PORTFOLIO_IDS.map((id) => [id, performance(id)]));
+    const legacyPortfolioOne = currentRules.portfolios.portfolio1;
+    const publicRules = { ...structuredClone(currentRules), ...legacyPortfolioOne, portfolios: structuredClone(currentRules.portfolios) };
+    return {
+      enabled,
+      storage: store.getStatus(),
+      rules: publicRules,
+      portfolios: Object.fromEntries(PORTFOLIO_IDS.map((id) => [id, { ...PAPER_PORTFOLIOS[id], rules: { ...currentRules.portfolios[id] }, performance: portfolioPerformance[id] }])),
+      lastSessionReset: currentRules.lastSessionReset ? { ...currentRules.lastSessionReset } : null,
+      marketSession: { ...marketSession },
+      contractLotSizes: { ...currentContractLotSizes },
+      trades: [...trades].sort((a, b) => Number(b.requestedAt || b.openedAt || 0) - Number(a.requestedAt || a.openedAt || 0)),
+      performance: performance(),
+      portfolioPerformance,
+    };
   }
 
   function changed() { onChange(snapshot()); }
@@ -191,7 +303,10 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
   function restoreCooldowns() {
     for (const trade of trades) {
       const expiry = finite(trade.cooldownUntil);
-      if (trade.status === 'closed' && expiry !== null) cooldownUntil[trade.symbol] = Math.max(cooldownUntil[trade.symbol] || 0, expiry);
+      if (trade.status === 'closed' && expiry !== null) {
+        const key = stateKey(trade.portfolioId || 'portfolio1', trade.symbol);
+        cooldownUntil[key] = Math.max(cooldownUntil[key] || 0, expiry);
+      }
     }
   }
 
@@ -199,8 +314,10 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     const storageReady = await store.initialize();
     if (!storageReady) { enabled = false; changed(); return snapshot(); }
     const restored = await store.load();
-    trades.splice(0, trades.length, ...restored.trades);
-    Object.assign(signalStates, restored.signalStates);
+    trades.splice(0, trades.length, ...restored.trades.map((trade) => ({ ...trade, portfolioId: PORTFOLIO_IDS.includes(trade.portfolioId) ? trade.portfolioId : 'portfolio1' })));
+    for (const [key, value] of Object.entries(restored.signalStates || {})) {
+      signalStates[key.includes(':') ? key : stateKey('portfolio1', key)] = value;
+    }
     restoreCooldowns();
     currentRules = normalizeRules(restored.settings || currentRules, currentRules);
     if (!restored.settings) await store.saveSettings(currentRules, now());
@@ -218,7 +335,10 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     trade.resultPoints = exitPrice - trade.entryPrice;
     const cooldownSeconds = Number(trade.cooldownSecondsAtEntry) || 0;
     trade.cooldownUntil = closedAt + (cooldownSeconds * 1000);
-    if (trade.cooldownUntil > closedAt) cooldownUntil[trade.symbol] = Math.max(cooldownUntil[trade.symbol] || 0, trade.cooldownUntil);
+    if (trade.cooldownUntil > closedAt) {
+      const key = stateKey(trade.portfolioId || 'portfolio1', trade.symbol);
+      cooldownUntil[key] = Math.max(cooldownUntil[key] || 0, trade.cooldownUntil);
+    }
     await store.saveTrade(trade);
   }
 
@@ -231,9 +351,7 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     await store.saveTrade(trade);
   }
 
-  async function monitorOpen(symbol, summary, timestamp) {
-    const trade = activeTrade(symbol);
-    if (!trade) return false;
+  async function monitorOpen(trade, summary, timestamp) {
     const quote = optionLastPrice(summary, trade, timestamp);
     const currentPrice = quote?.price ?? null;
     if (quote) {
@@ -251,9 +369,7 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     return currentPrice !== null;
   }
 
-  async function fillPending(symbol, summary, timestamp) {
-    const trade = trades.find((item) => item.symbol === symbol && item.status === 'pending');
-    if (!trade) return false;
+  async function fillPending(trade, summary, timestamp) {
     if (trade.expiresAt && timestamp >= trade.expiresAt) {
       await cancelPendingTrade(trade, timestamp, 'limit-not-reached');
       return true;
@@ -280,39 +396,51 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     return quote !== null;
   }
 
-  async function monitor(symbol, summary, timestamp) {
-    const pendingChanged = await fillPending(symbol, summary, timestamp);
-    const openChanged = await monitorOpen(symbol, summary, timestamp);
-    return pendingChanged || openChanged;
+  async function monitorEntries(symbol, summary, timestamp) {
+    const changedPortfolioIds = new Set();
+    const entries = trades.filter((trade) => trade.symbol === symbol && (trade.status === 'open' || trade.status === 'pending'));
+    for (const trade of entries) {
+      const pendingChanged = trade.status === 'pending' ? await fillPending(trade, summary, timestamp) : false;
+      const openChanged = trade.status === 'open' ? await monitorOpen(trade, summary, timestamp) : false;
+      if (pendingChanged || openChanged) changedPortfolioIds.add(trade.portfolioId || 'portfolio1');
+    }
+    return changedPortfolioIds;
   }
 
-  async function setSignalState(symbol, direction, timestamp) {
-    if ((signalStates[symbol] || null) === direction) return;
-    signalStates[symbol] = direction;
-    await store.saveSignalState(symbol, direction, timestamp);
+  async function setSignalState(portfolioId, symbol, direction, timestamp) {
+    const key = stateKey(portfolioId, symbol);
+    if ((signalStates[key] || null) === direction) return;
+    signalStates[key] = direction;
+    await store.saveSignalState(key, direction, timestamp);
   }
 
-  async function maybeOpen(symbol, payload, summary, timestamp) {
-    if (currentRules.symbolEnabled[symbol] !== true) { await setSignalState(symbol, null, timestamp); return false; }
-    const signal = preferredSignal(payload, currentRules.strengthThreshold);
-    if (!signal) { await setSignalState(symbol, null, timestamp); return false; }
-    await setSignalState(symbol, signal.direction, timestamp);
-    if (activeEntry(symbol) || (cooldownUntil[symbol] || 0) > timestamp) return false;
-    const option = atmOption(summary, signal.optionSide, timestamp);
+  async function maybeOpen(portfolio, symbol, payload, summary, timestamp) {
+    const portfolioId = portfolio.id;
+    if (portfolio.symbolEnabled[symbol] !== true) { await setSignalState(portfolioId, symbol, null, timestamp); return false; }
+    const signal = preferredSignal(payload, portfolio);
+    if (!signal) { await setSignalState(portfolioId, symbol, null, timestamp); return false; }
+    await setSignalState(portfolioId, symbol, signal.direction, timestamp);
+    const key = stateKey(portfolioId, symbol);
+    if (activeEntry(symbol, portfolioId) || (cooldownUntil[key] || 0) > timestamp) return false;
+    const optionSide = configuredOptionSide(signal, portfolio);
+    const option = atmOption(summary, optionSide, timestamp);
     if (!option) return false;
-    const offset = currentRules.entryPremiumOffset;
+    const offset = portfolio.entryPremiumOffset;
     const requestedEntryPrice = Math.max(0.01, option.marketPrice + offset);
     const pending = offset !== 0;
-    const expiresAt = currentRules.maxAliveSeconds > 0 ? timestamp + (currentRules.maxAliveSeconds * 1000) : null;
+    const expiresAt = portfolio.maxAliveSeconds > 0 ? timestamp + (portfolio.maxAliveSeconds * 1000) : null;
     const trade = {
       id: randomUUID(),
+      portfolioId,
+      portfolioLabel: PAPER_PORTFOLIOS[portfolioId].label,
+      strategy: portfolio.strategy,
       status: pending ? 'pending' : 'open',
       symbol,
-      optionType: signal.optionSide === 'ce' ? 'CALL' : 'PUT',
-      optionSide: signal.optionSide,
+      optionType: optionSide === 'ce' ? 'CALL' : 'PUT',
+      optionSide,
       securityId: option.securityId,
       strike: option.strike,
-      lots: currentRules.lots,
+      lots: portfolio.lots,
       contractLotSize: currentContractLotSizes[symbol],
       contractLotSizeSource: 'dhan-instrument-master-config',
       requestedAt: timestamp,
@@ -326,18 +454,22 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
       entryPriceObservedAt: pending ? null : option.observedAt,
       lastPrice: option.marketPrice,
       lastPriceObservedAt: option.observedAt,
-      targetPointsAtEntry: currentRules.targetPoints,
-      stopLossPointsAtEntry: currentRules.stopLossPoints,
-      targetPrice: pending ? null : option.marketPrice + currentRules.targetPoints,
-      stopLossPrice: pending ? null : Math.max(0, option.marketPrice - currentRules.stopLossPoints),
+      targetPointsAtEntry: portfolio.targetPoints,
+      stopLossPointsAtEntry: portfolio.stopLossPoints,
+      targetPrice: pending ? null : option.marketPrice + portfolio.targetPoints,
+      stopLossPrice: pending ? null : Math.max(0, option.marketPrice - portfolio.stopLossPoints),
       openedAt: pending ? null : timestamp,
       lastUpdatedAt: timestamp,
       expiresAt,
-      strengthThreshold: currentRules.strengthThreshold,
+      strengthThreshold: portfolio.strengthThreshold,
       signalIntensity: signal.intensity,
-      cooldownSecondsAtEntry: currentRules.cooldownSeconds,
       signalWindow: signal.window.label,
-      signalLabel: signal.window.window.marketStrength.label,
+      signalLabel: signal.label,
+      triggerType: signal.triggerType,
+      oiMetric: signal.oiMetric || null,
+      oiValueAtSignal: signal.oiValue ?? null,
+      oiThreshold: portfolio.strategy === 'oi-threshold' ? portfolio.oiThreshold : null,
+      cooldownSecondsAtEntry: portfolio.cooldownSeconds,
       source: 'dhan-live-paper-simulation',
       paperOnly: true,
     };
@@ -346,9 +478,10 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     return true;
   }
 
-  async function disableAndClose(timestamp, symbols = null, closeReason = 'simulator-disabled') {
+  async function disableAndClose(timestamp, { symbols = null, portfolioId = null, closeReason = 'simulator-disabled' } = {}) {
     const allowed = symbols ? new Set(symbols) : null;
-    const entries = trades.filter((trade) => (trade.status === 'open' || trade.status === 'pending') && (!allowed || allowed.has(trade.symbol)));
+    const entries = trades.filter((trade) => (trade.status === 'open' || trade.status === 'pending')
+      && (!allowed || allowed.has(trade.symbol)) && (!portfolioId || trade.portfolioId === portfolioId));
     for (const trade of entries) {
       if (trade.status === 'pending') await cancelPendingTrade(trade, timestamp, closeReason);
       else await closeTrade(trade, finite(trade.lastPrice) ?? trade.entryPrice, timestamp, closeReason, 'last-observed-option-ltp');
@@ -364,26 +497,16 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
       const openEntries = entries.filter((trade) => trade.status === 'open').length;
       const pendingEntries = entries.length - openEntries;
       const clearedRecords = trades.length;
-      await disableAndClose(timestamp, null, 'session-reset');
+      await disableAndClose(timestamp, { closeReason: 'session-reset' });
       if (await store.clearSessionHistory() !== true) {
         const error = new Error('Paper session reset could not clear durable paper records.');
         error.statusCode = 503;
         throw error;
       }
       trades.splice(0, trades.length);
-      for (const symbol of Object.keys(signalStates)) delete signalStates[symbol];
-      for (const symbol of Object.keys(cooldownUntil)) delete cooldownUntil[symbol];
-      currentRules = {
-        ...currentRules,
-        lastSessionReset: {
-          sessionKey,
-          resetAt: timestamp,
-          reason: 'session-reset',
-          clearedRecords,
-          closedOpenEntries: openEntries,
-          cancelledPendingEntries: pendingEntries,
-        },
-      };
+      for (const key of Object.keys(signalStates)) delete signalStates[key];
+      for (const key of Object.keys(cooldownUntil)) delete cooldownUntil[key];
+      currentRules = { ...currentRules, lastSessionReset: { sessionKey, resetAt: timestamp, reason: 'session-reset', clearedRecords, closedOpenEntries: openEntries, cancelledPendingEntries: pendingEntries } };
       await store.saveSettings(currentRules, timestamp);
       changed();
       return snapshot();
@@ -396,10 +519,16 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     const operation = queue.then(async () => {
       if (!store.isReady()) { const error = new Error('Paper simulator settings are unavailable until durable PostgreSQL storage is ready.'); error.statusCode = 503; throw error; }
       const nextRules = normalizeRules(nextSettings, currentRules);
-      if (nextRules.enabled === false) await disableAndClose(timestamp);
-      else {
-        const disabledSymbols = PAPER_SYMBOLS.filter((symbol) => currentRules.symbolEnabled[symbol] === true && nextRules.symbolEnabled[symbol] === false);
-        if (disabledSymbols.length) await disableAndClose(timestamp, disabledSymbols, 'symbol-disabled');
+      const legacyPortfolioOneUpdate = !nextSettings?.portfolios;
+      for (const portfolioId of PORTFOLIO_IDS) {
+        const previous = currentRules.portfolios[portfolioId];
+        const next = nextRules.portfolios[portfolioId];
+        if (previous.enabled === true && next.enabled === false) {
+          await disableAndClose(timestamp, { portfolioId, closeReason: legacyPortfolioOneUpdate && portfolioId === 'portfolio1' ? 'simulator-disabled' : 'portfolio-disabled' });
+          continue;
+        }
+        const disabledSymbols = PAPER_SYMBOLS.filter((symbol) => previous.symbolEnabled[symbol] === true && next.symbolEnabled[symbol] === false);
+        if (disabledSymbols.length) await disableAndClose(timestamp, { portfolioId, symbols: disabledSymbols, closeReason: 'symbol-disabled' });
       }
       currentRules = nextRules;
       enabled = currentRules.enabled === true;
@@ -437,13 +566,18 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
   function process(symbol, payload, summary, timestamp = now()) {
     queue = queue.then(async () => {
       if (!summary || !payload || marketSession.active === false) return snapshot();
-      const monitored = enabled ? await monitor(symbol, summary, timestamp) : false;
-      const opened = enabled && !monitored ? await maybeOpen(symbol, payload, summary, timestamp) : false;
-      if (monitored || opened) changed();
+      const monitored = enabled ? await monitorEntries(symbol, summary, timestamp) : new Set();
+      let opened = false;
+      if (enabled) {
+        for (const portfolio of portfolioList()) {
+          if (portfolio.enabled && !monitored.has(portfolio.id)) opened = (await maybeOpen(portfolio, symbol, payload, summary, timestamp)) || opened;
+        }
+      }
+      if (monitored.size || opened) changed();
       return snapshot();
     }).catch((err) => { console.error('[paper-trading]', err.message); return snapshot(); });
     return queue;
   }
 
-  return { restore, process, expire, snapshot, activeTrade, activeEntry, updateSettings, setMarketSession, resetSession };
+  return { restore, process, expire, snapshot, activeTrade, activeTrades, activeEntry, updateSettings, setMarketSession, resetSession };
 }

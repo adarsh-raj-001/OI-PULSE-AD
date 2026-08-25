@@ -1,6 +1,7 @@
 // Compact chart-series helpers. These points are retained separately from the
 // raw snapshots used for exact 5m/30m/3h OI windows so a 10-hour chart does
 // not require keeping full option-chain objects in memory.
+import { itmStrikeSets } from './oiWindows.js';
 
 const finite = (value) => {
   const number = Number(value);
@@ -84,20 +85,15 @@ function sidePoint(side, previous, prefix) {
  */
 export function buildChartPoint(snapshot, previousPoint, strikesEachSide) {
   const strikes = sortedStrikes(snapshot?.strikes);
-  const atmIndex = nearestStrikeIndex(strikes, snapshot?.underlyingPrice);
   const timestamp = finite(snapshot?.t);
   const underlyingPrice = finite(snapshot?.underlyingPrice);
-  if (timestamp === null || underlyingPrice === null || atmIndex === null) return null;
+  const { callStrikes, putStrikes, atmStrike } = itmStrikeSets(strikes, underlyingPrice, strikesEachSide);
+  if (timestamp === null || underlyingPrice === null || (!callStrikes.length && !putStrikes.length)) return null;
 
   const call = emptySide();
   const put = emptySide();
-  for (let offset = -strikesEachSide; offset <= strikesEachSide; offset += 1) {
-    const strike = strikes[atmIndex + offset];
-    if (!Number.isFinite(strike)) continue;
-    const legs = snapshot.strikes[strike];
-    addLeg(call, legs?.ce);
-    addLeg(put, legs?.pe);
-  }
+  callStrikes.forEach((strike) => addLeg(call, snapshot.strikes[strike]?.ce));
+  putStrikes.forEach((strike) => addLeg(put, snapshot.strikes[strike]?.pe));
 
   return {
     t: timestamp,
@@ -105,7 +101,9 @@ export function buildChartPoint(snapshot, previousPoint, strikesEachSide) {
     underlyingPriceChange: previousPoint && finite(previousPoint.underlyingPrice) !== null
       ? underlyingPrice - Number(previousPoint.underlyingPrice)
       : null,
-    atmStrike: strikes[atmIndex],
+    atmStrike,
+    callItmStrikes: callStrikes,
+    putItmStrikes: putStrikes,
     ...sidePoint(call, previousPoint, 'call'),
     ...sidePoint(put, previousPoint, 'put'),
   };
