@@ -133,3 +133,9 @@
 - [x] Clarify three-Call, three-Put, and combined OI aggregate totals without repeating the per-strike change.
 - [x] Validate the corrected compact mobile layout, data labels, frontend/docs parity, and paper-only safeguards before review publication.
 - [x] Publish the reviewed OI-card data-representation correction through a pull request.
+- [ ] Diagnose why the public mobile browser still renders the legacy OI-card template after the merged GitHub Pages update.
+- [ ] Correct the public delivery or cache path so the percentage and non-duplicative strict-ITM layout reaches mobile browsers.
+- [ ] Verify the live public dashboard source and report the resolution without changing paper-trading state.
+- [x] Correct positive paper-entry offsets so ₹1 means a pending entry ₹1 below the current option price, not above it.
+- [x] Validate pending-entry target prices and fill conditions for Call and Put paper trades without broker execution.
+- [ ] Publish the reviewed paper-entry offset direction correction through a pull request.
