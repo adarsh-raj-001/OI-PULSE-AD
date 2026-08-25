@@ -183,12 +183,13 @@ await symbolEngine.process('NIFTY', payload('Strong upward pressure'), summary(1
 assert.equal(symbolEngine.snapshot().trades.length, 2, 'enabled NIFTY must continue to open independently of disabled SENSEX');
 
 const pendingStore = new MemoryStore();
-const pendingEngine = createPaperTradeEngine({ store: pendingStore, rules: { ...defaults, entryPremiumOffset: -2 }, contractLotSizes });
+const pendingEngine = createPaperTradeEngine({ store: pendingStore, rules: { ...defaults, entryPremiumOffset: 2 }, contractLotSizes });
 await pendingEngine.restore();
 await pendingEngine.process('NIFTY', payload('Strong upward pressure'), summary(46, 120, 50_000), 50_000);
 state = pendingEngine.snapshot();
-assert.equal(state.trades[0].status, 'pending', 'a negative premium offset must create a pending paper limit entry rather than an invented immediate fill');
-assert.equal(state.trades[0].requestedEntryPrice, 44);
+assert.equal(state.trades[0].status, 'pending', 'a positive entry discount must create a pending paper limit entry rather than an invented immediate fill');
+assert.equal(state.trades[0].requestedEntryPrice, 44, '₹2 below a ₹46 Call premium requests ₹44');
+assert.equal(state.trades[0].entryCondition, 'at-or-below');
 await pendingEngine.process('NIFTY', payload('Balanced / mixed'), summary(45, 120, 51_000), 51_000);
 assert.equal(pendingEngine.snapshot().trades[0].status, 'pending', 'a below-market paper limit remains pending while LTP is above its requested price');
 await pendingEngine.process('NIFTY', payload('Balanced / mixed'), summary(44, 120, 52_000), 52_000);
@@ -196,6 +197,27 @@ state = pendingEngine.snapshot();
 assert.equal(state.trades[0].status, 'open');
 assert.equal(state.trades[0].entryPrice, 44);
 assert.equal(state.trades[0].entryPriceSource, 'live-option-ltp-pending-entry');
+
+const pendingPutStore = new MemoryStore();
+const pendingPutEngine = createPaperTradeEngine({ store: pendingPutStore, rules: { ...defaults, entryPremiumOffset: 2 }, contractLotSizes });
+await pendingPutEngine.restore();
+await pendingPutEngine.process('NIFTY', payload('Strong downward pressure'), summary(46, 120, 53_000), 53_000);
+state = pendingPutEngine.snapshot();
+assert.equal(state.trades[0].optionType, 'PUT');
+assert.equal(state.trades[0].requestedEntryPrice, 118, '₹2 below a ₹120 Put premium requests ₹118');
+assert.equal(state.trades[0].entryCondition, 'at-or-below');
+await pendingPutEngine.process('NIFTY', payload('Balanced / mixed'), summary(46, 119, 54_000), 54_000);
+assert.equal(pendingPutEngine.snapshot().trades[0].status, 'pending', 'a Put lower-price entry remains pending above its requested price');
+await pendingPutEngine.process('NIFTY', payload('Balanced / mixed'), summary(46, 118, 55_000), 55_000);
+state = pendingPutEngine.snapshot();
+assert.equal(state.trades[0].status, 'open');
+assert.equal(state.trades[0].entryPrice, 118);
+
+const legacyOffsetStore = new MemoryStore();
+const legacyOffsetEngine = createPaperTradeEngine({ store: legacyOffsetStore, rules: { ...defaults, entryPremiumOffset: -2 }, contractLotSizes });
+await legacyOffsetEngine.restore();
+assert.equal(legacyOffsetEngine.snapshot().rules.entryPremiumOffset, 2, 'legacy negative offsets must normalize to the same positive lower-price discount');
+
 await pendingEngine.setMarketSession({ active: false, reason: 'after-close' });
 await pendingEngine.process('NIFTY', payload('Strong upward pressure'), summary(100, 120, 53_000), 53_000);
 assert.equal(pendingEngine.snapshot().trades.length, 1, 'a paused market session must block new paper entries');
@@ -205,7 +227,7 @@ const sessionStore = new MemoryStore();
 const sessionEngine = createPaperTradeEngine({ store: sessionStore, rules: defaults, contractLotSizes });
 await sessionEngine.restore();
 await sessionEngine.process('NIFTY', payload('Strong upward pressure'), summary(100, 120, 60_000), 60_000);
-await sessionEngine.updateSettings({ entryPremiumOffset: -2 }, 60_001);
+await sessionEngine.updateSettings({ entryPremiumOffset: 2 }, 60_001);
 await sessionEngine.process('SENSEX', payload('Strong downward pressure'), summary(100, 120, 60_002), 60_002);
 state = sessionEngine.snapshot();
 assert.equal(state.trades.filter((trade) => trade.status === 'open').length, 1, 'session reset setup includes an active paper entry');
@@ -216,7 +238,7 @@ assert.deepEqual(state.trades, [], 'session reset must clear in-memory paper led
 assert.deepEqual(sessionStore.trades, [], 'session reset must remove durable paper records after lifecycle closure');
 assert.deepEqual(sessionStore.signalStates, {}, 'session reset must remove durable paper signal guards');
 assert.equal(state.rules.enabled, true, 'session reset must retain the paper simulator enabled setting');
-assert.equal(state.rules.entryPremiumOffset, -2, 'session reset must retain configurable paper settings');
+assert.equal(state.rules.entryPremiumOffset, 2, 'session reset must retain configurable paper settings');
 assert.deepEqual(state.lastSessionReset, {
   sessionKey: '2026-08-24', resetAt: 61_000, reason: 'session-reset', clearedRecords: 2, closedOpenEntries: 1, cancelledPendingEntries: 1,
 });
@@ -328,4 +350,43 @@ assert.equal(percentageTrade.optionType, 'CALL', 'a positive Call % minus Put % 
 assert.ok(Math.abs(percentageTrade.oiValueAtSignal - 0.4) < 1e-12, 'percentage difference must equal Call OI percentage minus Put OI percentage');
 assert.equal(percentageTrade.oiThresholdMode, 'percentage', 'paper trade audit data must preserve the threshold unit selected for Portfolio 3');
 assert.equal(percentageTrade.oiThreshold, 0.3);
+
+const oppositeSideStore = new MemoryStore();
+const oppositeSideEngine = createPaperTradeEngine({
+  store: oppositeSideStore,
+  rules: {
+    marketHoursEnabled: true,
+    sessionResetEnabled: true,
+    portfolios: {
+      portfolio1: { ...defaults, enabled: false },
+      portfolio2: { ...defaults, enabled: false },
+      portfolio3: { ...defaults, enabled: true, tradeSide: 'put', oiWindow: 'm5', oppositeSideOiPctEnabled: true, oppositeSideOiPctThreshold: 1 },
+    },
+  },
+  contractLotSizes,
+});
+await oppositeSideEngine.restore();
+const putGrowthPayload = { windows: { m5: { referenceMode: 'clock-aligned-baseline', callItmOiChangePct: 0.7, putItmOiChangePct: 1.2 } } };
+await oppositeSideEngine.process('NIFTY', putGrowthPayload, summary(100, 120, 90_000), 90_000);
+state = oppositeSideEngine.snapshot();
+const putGrowthTrade = state.trades.find((trade) => trade.symbol === 'NIFTY');
+assert.equal(putGrowthTrade.optionType, 'CALL', 'Put OI percentage growth at or above the threshold must buy a Call');
+assert.equal(putGrowthTrade.oiTriggerSource, 'put-oi-percent-to-call');
+assert.equal(putGrowthTrade.oiThresholdMode, 'percentage');
+assert.equal(putGrowthTrade.oiOppositeSidePctThreshold, 1);
+const callGrowthPayload = { windows: { m5: { referenceMode: 'clock-aligned-baseline', callItmOiChangePct: 1.4, putItmOiChangePct: 0.6 } } };
+await oppositeSideEngine.process('SENSEX', callGrowthPayload, summary(100, 120, 91_000), 91_000);
+state = oppositeSideEngine.snapshot();
+const callGrowthTrade = state.trades.find((trade) => trade.symbol === 'SENSEX');
+assert.equal(callGrowthTrade.optionType, 'PUT', 'Call OI percentage growth at or above the threshold must buy a Put');
+assert.equal(callGrowthTrade.oiTriggerSource, 'call-oi-percent-to-put');
+const equalPercentStore = new MemoryStore();
+const equalPercentEngine = createPaperTradeEngine({
+  store: equalPercentStore,
+  rules: { marketHoursEnabled: true, sessionResetEnabled: true, portfolios: { portfolio1: { ...defaults, enabled: false }, portfolio2: { ...defaults, enabled: false }, portfolio3: { ...defaults, enabled: true, oiWindow: 'm5', oppositeSideOiPctEnabled: true, oppositeSideOiPctThreshold: 1 } } },
+  contractLotSizes,
+});
+await equalPercentEngine.restore();
+await equalPercentEngine.process('NIFTY', { windows: { m5: { referenceMode: 'clock-aligned-baseline', callItmOiChangePct: 1.3, putItmOiChangePct: 1.3 } } }, summary(100, 120, 92_000), 92_000);
+assert.equal(equalPercentEngine.snapshot().trades.length, 0, 'equal Call and Put percentage gains must not create an ambiguous opposite-side paper entry');
 console.log('paper trading tests passed');

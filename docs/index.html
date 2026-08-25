@@ -304,7 +304,7 @@
         <div id="paperStrengthControl"><label for="paperStrengthThreshold">Strength threshold · 1–100</label><input id="paperStrengthThreshold" type="number" inputmode="numeric" min="1" max="100" step="1" /></div>
         <div id="paperReverseControl"><label for="paperReverseOrders">Reverse orders</label><label class="paper-switch" aria-label="Reverse selected portfolio paper orders"><input id="paperReverseOrders" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label><div class="paper-switch-note">Off follows upward→Call and downward→Put. On swaps them.</div></div>
         <div id="paperTradeSideControl" hidden><label for="paperTradeSide">OI trigger trade side</label><select id="paperTradeSide"><option value="auto">Automatic from OI direction</option><option value="call">Always buy Call</option><option value="put">Always buy Put</option></select></div>
-        <div><label for="paperEntryOffset">Entry premium offset · ₹</label><input id="paperEntryOffset" type="number" inputmode="decimal" min="-10000" max="10000" step="0.05" /></div>
+        <div><label for="paperEntryOffset">Entry discount below current premium · ₹</label><input id="paperEntryOffset" type="number" inputmode="decimal" min="0" max="10000" step="0.05" /><div class="paper-switch-note">₹1 requests a paper entry ₹1 below the current option premium, then waits for the premium to reach that level or lower.</div></div>
         <div><label for="paperTarget">Target · premium points</label><input id="paperTarget" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
         <div><label for="paperStop">Stop-loss · premium points</label><input id="paperStop" type="number" inputmode="decimal" min="0.01" max="10000" step="0.05" /></div>
         <div><label for="paperAlive">Maximum alive time · seconds</label><input id="paperAlive" type="number" inputmode="numeric" min="0" max="86400" step="1" /></div>
@@ -315,6 +315,8 @@
         <div><label for="paperOiMetric">ITM OI trigger basis</label><select id="paperOiMetric"><option value="call">Call ITM OI change</option><option value="put">Put ITM OI change</option><option value="combined">Call + Put ITM OI change</option><option value="difference">Call − Put ITM OI change</option></select></div>
         <div><label for="paperOiThresholdMode">OI threshold unit</label><select id="paperOiThresholdMode"><option value="number">OI change number</option><option value="percentage">OI change percentage</option></select></div>
         <div><label id="paperOiThresholdLabel" for="paperOiThreshold">OI change threshold · number</label><input id="paperOiThreshold" type="number" inputmode="decimal" min="0.01" max="10000000000" step="1" /></div>
+        <div id="paperOiOppositeSideControl"><label for="paperOiOppositeSidePctEnabled">Opposite-side OI % routing</label><label class="paper-switch" aria-label="Enable opposite-side OI percentage routing"><input id="paperOiOppositeSidePctEnabled" type="checkbox" /><span class="paper-switch-track" aria-hidden="true"></span></label><div class="paper-switch-note">On: Put OI % increase buys a Call; Call OI % increase buys a Put. The larger positive side must reach the threshold. This overrides the standard OI basis and trade-side selector.</div></div>
+        <div id="paperOiOppositeThresholdControl"><label for="paperOiOppositeSidePctThreshold">Opposite-side OI increase threshold · %</label><input id="paperOiOppositeSidePctThreshold" type="number" inputmode="decimal" min="0.01" max="10000000000" step="0.01" /></div>
       </div>
       <div class="paper-settings-status" id="paperSettingsStatus">Awaiting durable paper-simulator state.</div>
       <button class="primary" id="paperSaveBtn" type="button">Apply paper controls</button>
@@ -716,11 +718,11 @@ function renderPaperTrades(){
   const closed=trades.filter(trade=>trade.status!=='open'&&trade.status!=='pending').sort((a,b)=>Number(b.closedAt||b.openedAt||b.requestedAt||0)-Number(a.closedAt||a.openedAt||a.requestedAt||0));
   const positions=[...pending,...opened].length ? [...pending,...opened].map(trade=>paperTradeCard(trade,true)).join('') : `<div class="paper-empty">No live or pending simulated entry. A new paper entry appears here only after a completed qualifying window and a valid ATM option premium are available.</div>`;
   const history=closed.length ? closed.map(trade=>paperTradeCard(trade,false)).join('') : `<div class="paper-empty">No closed simulated trades yet. Completed, stopped, timed-out, and simulator-disabled records will appear here in most-recent-first order.</div>`;
-  const triggerText=portfolio.strategy==='oi-threshold' ? `${rules.oiMetric||'combined'} ITM OI ${rules.oiThresholdMode==='percentage'?'%':'number'} · |Δ| ≥ ${rules.oiThresholdMode==='percentage'?fmtPct(rules.oiThreshold??1,2):fmtInt(rules.oiThreshold??1)} · ${({m5:'5 Min',m30:'30 Min',h3:'3 Hour'})[rules.oiWindow]||'5 Min'}` : `${rules.reverseOrders?'Reversed ':'Follow '}strength ≥${rules.strengthThreshold??60}/100`;
+  const triggerText=portfolio.strategy==='oi-threshold' ? (rules.oppositeSideOiPctEnabled===true ? `Put OI % ↑ → Call / Call OI % ↑ → Put · larger side ≥ ${fmtPct(rules.oppositeSideOiPctThreshold??1,2)} · ${({m5:'5 Min',m30:'30 Min',h3:'3 Hour'})[rules.oiWindow]||'5 Min'}` : `${rules.oiMetric||'combined'} ITM OI ${rules.oiThresholdMode==='percentage'?'%':'number'} · |Δ| ≥ ${rules.oiThresholdMode==='percentage'?fmtPct(rules.oiThreshold??1,2):fmtInt(rules.oiThreshold??1)} · ${({m5:'5 Min',m30:'30 Min',h3:'3 Hour'})[rules.oiWindow]||'5 Min'}`) : `${rules.reverseOrders?'Reversed ':'Follow '}strength ≥${rules.strengthThreshold??60}/100`;
   const netClass=performance.netMoney>0?'rise':performance.netMoney<0?'fall':'';
   const realisedClass=performance.realisedMoney>0?'rise':performance.realisedMoney<0?'fall':'';
   const openClass=performance.unrealisedMoney>0?'rise':performance.unrealisedMoney<0?'fall':'';
-  const strategyNote=portfolio.strategy==='oi-threshold'?'Portfolio 3 compares the selected signed three-ITM OI delta against the configured number or percentage threshold, then uses the selected Call/Put routing. Percentage uses the same selected-window three-leg reference OI; Difference % is Call % minus Put %.':'This portfolio follows market strength by default: upward pressure buys a Call and downward pressure buys a Put. Enable Reverse orders to swap those entries.';
+  const strategyNote=portfolio.strategy==='oi-threshold'?(rules.oppositeSideOiPctEnabled===true?'Portfolio 3 uses the selected window’s positive selected-three-strike OI percentages: Put OI growth buys a Call and Call OI growth buys a Put. The larger qualifying side wins, and the configured manual trade-side selector is intentionally ignored.':'Portfolio 3 compares the selected signed three-ITM OI delta against the configured number or percentage threshold, then uses the selected Call/Put routing. Percentage uses the same selected-window three-leg reference OI; Difference % is Call % minus Put %.'):'This portfolio follows market strength by default: upward pressure buys a Call and downward pressure buys a Put. Enable Reverse orders to swap those entries.';
   container.innerHTML=`<div class="paper-head"><div class="paper-kicker">PAPER ONLY · NO REAL ORDER</div><div class="paper-title-row"><div class="paper-title">${portfolio.label||'Portfolio 1'} records</div><div class="paper-status">${status}<br>${storageNote}</div></div>${paperPortfolioTabs()}<div class="paper-disclaimer">${strategyNote} Entry, target, and stop-loss use option premium only. This is an automated paper simulation, not a broker order or investment advice.</div></div><section class="paper-pnl-summary" aria-label="Selected portfolio paper profit and loss"><div class="paper-pnl-head"><div><div class="paper-pnl-title">Selected portfolio P&L</div><div class="paper-pnl-sub">Closed and currently open paper positions</div></div><span class="paper-pnl-badge">${performance.totalTrades||0} records</span></div><div class="paper-pnl-grid"><div class="paper-pnl-kpi"><div class="k">Net P&L</div><div class="v ${netClass}">${fmtSignedMoney(performance.netMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Realised</div><div class="v ${realisedClass}">${fmtSignedMoney(performance.realisedMoney)}</div></div><div class="paper-pnl-kpi"><div class="k">Open P&L</div><div class="v ${openClass}">${fmtSignedMoney(performance.unrealisedMoney)}</div></div></div><div class="paper-pnl-note">Paper rupee P&L = option-premium movement × configured paper lots × contract units per lot. Current configured values: NIFTY ${contractLotSizes.NIFTY??'—'} units/lot · SENSEX ${contractLotSizes.SENSEX??'—'} units/lot. It excludes brokerage, fees, taxes, margin, and slippage. Closed: ${performance.closedTrades||0} · Wins: ${performance.winningClosedTrades||0} · Losses: ${performance.losingClosedTrades||0}.</div></section><div class="paper-meta"><div class="paper-meta-item"><div class="paper-meta-label">Portfolio</div><div class="paper-meta-value">${portfolio.label||'Portfolio 1'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Simulator</div><div class="paper-meta-value">${rules.enabled?'Enabled':'Disabled'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Lots per simulation</div><div class="paper-meta-value">${rules.lots??10} lots</div></div><div class="paper-meta-item"><div class="paper-meta-label">NIFTY / SENSEX</div><div class="paper-meta-value">${rules.symbolEnabled?.NIFTY!==false?'On':'Off'} / ${rules.symbolEnabled?.SENSEX!==false?'On':'Off'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Trigger</div><div class="paper-meta-value">${triggerText}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Trade side</div><div class="paper-meta-value">${rules.tradeSide||'auto'}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Premium target / stop</div><div class="paper-meta-value">+${rules.targetPoints??2} / −${rules.stopLossPoints??5}</div></div><div class="paper-meta-item"><div class="paper-meta-label">Time / cooldown</div><div class="paper-meta-value">${fmtSeconds(rules.maxAliveSeconds)} / ${fmtSeconds(rules.cooldownSeconds)}</div></div></div><section class="paper-section paper-live-section" aria-label="Live simulated positions"><div class="paper-section-head"><div><div class="paper-section-title">Live simulated positions</div><div class="paper-section-sub">Current option premium and paper-only lifecycle status</div></div><span class="paper-section-count">${opened.length} open</span></div><div class="paper-records">${positions}</div></section><section class="paper-section paper-history-section" aria-label="Closed simulated trade history"><div class="paper-section-head"><div><div class="paper-section-title">Closed trade history</div><div class="paper-section-sub">Most recent completed paper records first</div></div><span class="paper-section-count">${closed.length} closed</span></div><div class="paper-records">${history}</div></section>`;
 }
 
@@ -748,19 +750,23 @@ function renderPaperControls(){
   $('paperOiMetric').value=rules.oiMetric||'combined';
   $('paperOiThresholdMode').value=rules.oiThresholdMode||'number';
   $('paperOiThreshold').value=String(rules.oiThreshold??1);
+  $('paperOiOppositeSidePctEnabled').checked=rules.oppositeSideOiPctEnabled===true;
+  $('paperOiOppositeSidePctThreshold').value=String(rules.oppositeSideOiPctThreshold??1);
   const isOiPortfolio=portfolio.strategy==='oi-threshold';
+  const oppositeSideOiPct=rules.oppositeSideOiPctEnabled===true;
   $('paperStrengthControl').hidden=isOiPortfolio;
   $('paperReverseControl').hidden=isOiPortfolio;
-  $('paperTradeSideControl').hidden=!isOiPortfolio;
+  $('paperTradeSideControl').hidden=!isOiPortfolio||oppositeSideOiPct;
   $('paperOiControlFields').hidden=!isOiPortfolio;
   updateOiThresholdControl();
   document.querySelectorAll('#paperControlFields input, #paperControlFields select, #paperOiControlFields input, #paperOiControlFields select, #paperEnabled, #paperMarketHoursEnabled, #paperSessionResetEnabled, #paperNiftyEnabled, #paperSensexEnabled, #paperSaveBtn').forEach(control=>{control.disabled=!editable;});
+  updateOppositeSideOiControls({isOiPortfolio, editable});
   document.querySelectorAll('[data-paper-portfolio]').forEach(button=>button.classList.toggle('active',button.dataset.paperPortfolio===selectedPaperPortfolio));
   const openCount=(paperTradeState?.trades||[]).filter(trade=>trade.status==='open' && (trade.portfolioId||'portfolio1')===selectedPaperPortfolio).length;
   const descriptions={
     portfolio1:'Portfolio 1 follows market strength: upward pressure buys a Call and downward pressure buys a Put. Enable Reverse orders to swap those entries.',
     portfolio2:'Portfolio 2 follows market strength independently. Enable Reverse orders when you want upward pressure to buy a Put and downward pressure to buy a Call.',
-    portfolio3:'Portfolio 3 waits for the selected signed three-ITM OI measure to reach its configured number or percentage threshold. Percentage uses the same selected-window three-leg baseline; Difference % is Call % minus Put %. Choose a Call, Put, automatic direction, window, and OI basis below.',
+    portfolio3:oppositeSideOiPct?'Portfolio 3 opposite-side percentage routing is active: Put OI % growth buys a Call, while Call OI % growth buys a Put. The larger positive side must reach the configured percentage threshold; manual Call/Put routing is disabled for this mode.':'Portfolio 3 waits for the selected signed three-ITM OI measure to reach its configured number or percentage threshold. Percentage uses the same selected-window three-leg baseline; Difference % is Call % minus Put %. Choose a Call, Put, automatic direction, window, and OI basis below.',
   };
   $('paperPortfolioDescription').textContent=descriptions[selectedPaperPortfolio];
   $('paperEnabledNote').textContent=!editable?'Durable PostgreSQL storage is required for controls.':rules.enabled?'Enabled · qualifying signals may create simulated records.':'Disabled · new simulated entries are blocked.';
@@ -777,7 +783,14 @@ function updateOiThresholdControl(){
   $('paperOiThreshold').step=percentage?'0.01':'1';
 }
 
+function updateOppositeSideOiControls({isOiPortfolio=selectedPortfolioState().strategy==='oi-threshold', editable=true}={}){
+  const active=isOiPortfolio&&$('paperOiOppositeSidePctEnabled').checked;
+  $('paperTradeSideControl').hidden=!isOiPortfolio||active;
+  ['paperOiMetric','paperOiThresholdMode','paperOiThreshold'].forEach(id=>{ $(id).disabled=!editable||active; });
+}
+
 $('paperOiThresholdMode').addEventListener('change',updateOiThresholdControl);
+$('paperOiOppositeSidePctEnabled').addEventListener('change',()=>updateOppositeSideOiControls());
 
 function selectPaperPortfolio(portfolioId){
   if (!['portfolio1','portfolio2','portfolio3'].includes(portfolioId)) return;
@@ -890,7 +903,7 @@ function renderCards(payload){
       <div class="card-top">
         <div>
           <div class="card-label">${w.label} · ITM OI</div>
-          <div class="card-sub">${win.referenceMode==='current-market-baseline' ? `Current market baseline · ${compactDuration(win.actualSpanMs)} since reset/start` : `${fmtAgo(win.actualSpanMs)} · strike step ${stepLabel}`}</div>
+          <div class="card-sub">${win.referenceMode==='clock-aligned-baseline' ? `Standard-clock reset · baseline ${fmtStamp(win.fromT)} · ${compactDuration(win.actualSpanMs)} elapsed` : win.referenceMode==='current-market-baseline' ? `Current market baseline · ${compactDuration(win.actualSpanMs)} since reset/start` : `${fmtAgo(win.actualSpanMs)} · strike step ${stepLabel}`}</div>
         </div>
       </div>
       <div class="band-total">
@@ -1198,6 +1211,8 @@ async function savePaperControls({switchChanged=false}={}){
     nextPortfolio.oiMetric=$('paperOiMetric').value;
     nextPortfolio.oiThresholdMode=$('paperOiThresholdMode').value;
     nextPortfolio.oiThreshold=Number($('paperOiThreshold').value);
+    nextPortfolio.oppositeSideOiPctEnabled=$('paperOiOppositeSidePctEnabled').checked;
+    nextPortfolio.oppositeSideOiPctThreshold=Number($('paperOiOppositeSidePctThreshold').value);
   }else{
     nextPortfolio.reverseOrders=$('paperReverseOrders').checked;
   }
