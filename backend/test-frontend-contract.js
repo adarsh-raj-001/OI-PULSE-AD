@@ -97,6 +97,7 @@ assert.match(html, /id="paperReverseOrders"/);
 assert.match(html, /Reverse orders/);
 assert.match(html, /paperReverseControl/);
 assert.match(html, /paperTradeSideControl/);
+assert.match(html, /\.paper-control-grid\[hidden\]\{display:none !important;\}/);
 assert.match(html, /id="paperTradeSide"/);
 assert.match(html, /id="paperOiWindow"/);
 assert.match(html, /id="paperOiMetric"/);
