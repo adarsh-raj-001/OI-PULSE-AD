@@ -146,4 +146,4 @@
 - [x] Make the mobile settings sheet reset to its top position every time it opens so no upper controls are hidden.
 - [x] Add an accessible upper-left back button that closes settings without applying changes.
 - [x] Validate the mobile portrait settings layout, back interaction, frontend/docs parity, and paper-only safeguards before review publication.
-- [ ] Publish the reviewed mobile settings-sheet navigation correction through a pull request.
+- [x] Publish the reviewed mobile settings-sheet navigation correction through a pull request.
