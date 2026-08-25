@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { currentBaselineDelta, exactWindowDelta } from './oiWindows.js';
+import { clockAlignedWindowDelta, currentBaselineDelta, exactWindowDelta, standardClockWindowStart } from './oiWindows.js';
 
 function summary(t, oiShift = 0) {
   return {
@@ -37,6 +37,32 @@ assert.equal(exact.referenceMode, 'exact-window');
 assert.equal(exact.provisional, false);
 assert.equal(exact.fromT, fiveMinuteReference.t);
 assert.equal(exact.bandDeltaTotal, 12, 'after five minutes, the card must transition to an exact 5-minute reference');
+
+const istTimestamp = (hour, minute) => Date.UTC(2026, 0, 1, hour - 5, minute - 30);
+const fiveMinuteHistory = [summary(istTimestamp(11, 0)), summary(istTimestamp(11, 4), 4), summary(istTimestamp(11, 5), 7), summary(istTimestamp(11, 6), 10)];
+const beforeFiveMinuteReset = clockAlignedWindowDelta(fiveMinuteHistory.slice(0, 2), istTimestamp(11, 4), 5 * 60_000, 1);
+assert.equal(beforeFiveMinuteReset.referenceMode, 'clock-aligned-baseline');
+assert.equal(beforeFiveMinuteReset.fromT, istTimestamp(11, 0));
+assert.equal(beforeFiveMinuteReset.bandDeltaTotal, 8, 'the 11:00 baseline applies until the 11:05 standard-clock boundary');
+const atFiveMinuteReset = clockAlignedWindowDelta(fiveMinuteHistory.slice(0, 3), istTimestamp(11, 5), 5 * 60_000, 1);
+assert.equal(atFiveMinuteReset.windowStartAt, istTimestamp(11, 5));
+assert.equal(atFiveMinuteReset.fromT, istTimestamp(11, 5));
+assert.equal(atFiveMinuteReset.bandDeltaTotal, 0, 'the first real 11:05 snapshot must become the new five-minute baseline and show zero delta');
+const afterFiveMinuteReset = clockAlignedWindowDelta(fiveMinuteHistory, istTimestamp(11, 6), 5 * 60_000, 1);
+assert.equal(afterFiveMinuteReset.fromT, istTimestamp(11, 5));
+assert.equal(afterFiveMinuteReset.bandDeltaTotal, 6, 'post-boundary changes must compare against the new 11:05 baseline');
+
+const thirtyMinuteHistory = [summary(istTimestamp(11, 0)), summary(istTimestamp(11, 29), 5), summary(istTimestamp(11, 30), 9)];
+assert.equal(standardClockWindowStart(istTimestamp(11, 29), 30 * 60_000), istTimestamp(11, 0));
+assert.equal(standardClockWindowStart(istTimestamp(11, 30), 30 * 60_000), istTimestamp(11, 30));
+assert.equal(clockAlignedWindowDelta(thirtyMinuteHistory.slice(0, 2), istTimestamp(11, 29), 30 * 60_000, 1).bandDeltaTotal, 10);
+assert.equal(clockAlignedWindowDelta(thirtyMinuteHistory, istTimestamp(11, 30), 30 * 60_000, 1).bandDeltaTotal, 0, 'the 11:30 snapshot must reset the 30-minute delta to zero');
+
+const threeHourHistory = [summary(istTimestamp(9, 15)), summary(istTimestamp(11, 59), 12), summary(istTimestamp(12, 0), 16)];
+assert.equal(standardClockWindowStart(istTimestamp(11, 59), 3 * 60 * 60_000), istTimestamp(9, 0));
+assert.equal(standardClockWindowStart(istTimestamp(12, 0), 3 * 60 * 60_000), istTimestamp(12, 0));
+assert.equal(clockAlignedWindowDelta(threeHourHistory.slice(0, 2), istTimestamp(11, 59), 3 * 60 * 60_000, 1).fromT, istTimestamp(9, 15), 'the first real post-open snapshot provides the 09:00 block baseline');
+assert.equal(clockAlignedWindowDelta(threeHourHistory, istTimestamp(12, 0), 3 * 60 * 60_000, 1).bandDeltaTotal, 0, 'the 12:00 standard-clock boundary must reset the three-hour delta to zero');
 
 const incompleteCurrent = structuredClone(afterReset);
 incompleteCurrent.strikes[24200].ce.oi = null;

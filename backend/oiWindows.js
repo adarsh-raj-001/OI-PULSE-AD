@@ -56,7 +56,7 @@ function changePct(change, baseline) {
   return (change / Math.abs(baseline)) * 100;
 }
 
-function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, referenceMode, provisional }) {
+function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, referenceMode, provisional, windowStartAt = null, windowEndAt = null }) {
   if (!cur?.strikes || !ref?.strikes) return null;
   const allStrikes = sortedStrikes(cur.strikes);
   const { callStrikes, putStrikes, atmStrike } = itmStrikeSets(allStrikes, cur.underlyingPrice, strikesEachSide);
@@ -122,6 +122,8 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
     requestedWindowMs,
     referenceMode,
     provisional,
+    windowStartAt,
+    windowEndAt,
     atmStrike,
     strikeStep: bandStep(allStrikes),
     band,
@@ -162,6 +164,42 @@ export function exactWindowDelta(history, nowMs, windowMs, strikesEachSide) {
     requestedWindowMs: windowMs,
     referenceMode: 'exact-window',
     provisional: false,
+  });
+}
+
+const INDIA_STANDARD_TIME_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+// The market is in India, which has a fixed UTC+05:30 offset. Shift by that
+// offset before flooring so every interval starts on an India wall-clock mark:
+// 5m at :00/:05…, 30m at :00/:30, and 3h at 09:00/12:00/15:00.
+export function standardClockWindowStart(nowMs, windowMs) {
+  const now = Number(nowMs);
+  const span = Number(windowMs);
+  if (!Number.isFinite(now) || !Number.isFinite(span) || span <= 0) return null;
+  return Math.floor((now + INDIA_STANDARD_TIME_OFFSET_MS) / span) * span - INDIA_STANDARD_TIME_OFFSET_MS;
+}
+
+// The first real snapshot collected at or after a standard-clock boundary is
+// that window's reference. Its delta is therefore zero, and all later deltas
+// in the block use that same current-market baseline rather than a rolling
+// lookback. A manual/session reset naturally behaves the same way because it
+// clears retained snapshots and starts a new real snapshot history.
+export function clockAlignedWindowDelta(history, nowMs, windowMs, strikesEachSide) {
+  if (!Array.isArray(history) || !history.length) return null;
+  const cur = history[history.length - 1];
+  const windowStartAt = standardClockWindowStart(nowMs, windowMs);
+  if (windowStartAt === null || Number(cur?.t) < windowStartAt) return null;
+  const ref = history.find((snapshot) => Number(snapshot?.t) >= windowStartAt);
+  if (!ref) return null;
+  return calculateBandDelta({
+    cur,
+    ref,
+    strikesEachSide,
+    requestedWindowMs: windowMs,
+    referenceMode: 'clock-aligned-baseline',
+    provisional: false,
+    windowStartAt,
+    windowEndAt: windowStartAt + windowMs,
   });
 }
 

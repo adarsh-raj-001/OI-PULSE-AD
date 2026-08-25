@@ -26,7 +26,7 @@
   "liveFeedFreshnessMs": 15000,
   "ssePushIntervalMs": 500,
   "historyMaxMs": 12960000,
-  "_historyPersistIntervalMs_comment": "When OI_HISTORY_DATABASE_URL is configured, compact raw snapshots are written at this interval for restart-safe 5m/30m/3h recovery. In-memory live calculations still use every event bucket.",
+  "_historyPersistIntervalMs_comment": "When OI_HISTORY_DATABASE_URL is configured, compact raw snapshots are written at this interval for restart-safe standard-clock 5m/30m/3h baseline recovery. In-memory live calculations still use every event bucket.",
   "historyPersistIntervalMs": 5000,
   "_chartHistoryMaxMs_comment": "Compact ITM-only chart points retained independently from raw OI snapshots: 10 hours of event-driven Dhan live-feed updates, coalesced into short browser-safe time buckets.",
   "chartHistoryMaxMs": 36000000,
@@ -63,7 +63,7 @@
     "portfolios": {
       "portfolio1": { "enabled": true, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": false, "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
       "portfolio2": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": true, "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
-      "portfolio3": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0, "oiWindow": "m5", "oiMetric": "combined", "oiThresholdMode": "number", "oiThreshold": 1 }
+      "portfolio3": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0, "oiWindow": "m5", "oiMetric": "combined", "oiThresholdMode": "number", "oiThreshold": 1, "oppositeSideOiPctEnabled": false, "oppositeSideOiPctThreshold": 1 }
     }
   }
 }
