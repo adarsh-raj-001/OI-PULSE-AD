@@ -1,8 +1,8 @@
 // OI Pulse — backend relay
 // Polls an option chain data source (Dhan, or the free NSE feed — see
 // config.json's dataSource) for each configured symbol, tracks OI at the
-// at-the-money strike plus N strikes above/below, computes 5m/30m/3h
-// deltas per strike, streams over SSE, and pushes a notification when
+// at-the-money strike plus N strikes above/below, computes standard-clock
+// 5m/30m/3h deltas per strike, streams over SSE, and pushes a notification when
 // a window's combined change crosses its configured threshold.
 
 import express from 'express';
@@ -19,7 +19,7 @@ import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
 import { createHistoryStore } from './historyStore.js';
 import { createPaperTradeStore } from './paperTradeStore.js';
 import { createPaperTradeEngine } from './paperTrading.js';
-import { currentBaselineDelta, exactWindowDelta, itmStrikeSets, sortedStrikes } from './oiWindows.js';
+import { clockAlignedWindowDelta, itmStrikeSets, sortedStrikes } from './oiWindows.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
@@ -77,8 +77,7 @@ function computePayload(name) {
   if (!hist.length) return null;
   const cur = hist[hist.length - 1];
   const baseline = hist.find((snapshot) => snapshot.resetBaseline === true) || hist[0];
-  const windowFor = (windowMs) => exactWindowDelta(hist, cur.t, windowMs, config.strikesEachSide)
-    || currentBaselineDelta(baseline, cur, windowMs, config.strikesEachSide);
+  const windowFor = (windowMs) => clockAlignedWindowDelta(hist, cur.t, windowMs, config.strikesEachSide);
   return {
     symbol: name,
     updatedAt: cur.t,

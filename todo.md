@@ -139,3 +139,7 @@
 - [x] Correct positive paper-entry offsets so ₹1 means a pending entry ₹1 below the current option price, not above it.
 - [x] Validate pending-entry target prices and fill conditions for Call and Put paper trades without broker execution.
 - [x] Publish the reviewed paper-entry offset direction correction through a pull request.
+- [x] Add configurable Portfolio 3 percentage triggers that buy a Call from Put OI percentage growth and buy a Put from Call OI percentage growth.
+- [x] Replace rolling OI-window comparisons with aligned five-minute, 30-minute, and three-hour baseline resets that set the delta to zero from the current snapshot.
+- [x] Validate opposite-side percentage trigger routing, aligned reset timing, zero-delta semantics, dashboard clarity, durable history, and paper-only safeguards.
+- [x] Publish the reviewed Portfolio 3 OI-percentage trigger and aligned-window reset update through a pull request.

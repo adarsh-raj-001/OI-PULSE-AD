@@ -350,4 +350,43 @@ assert.equal(percentageTrade.optionType, 'CALL', 'a positive Call % minus Put % 
 assert.ok(Math.abs(percentageTrade.oiValueAtSignal - 0.4) < 1e-12, 'percentage difference must equal Call OI percentage minus Put OI percentage');
 assert.equal(percentageTrade.oiThresholdMode, 'percentage', 'paper trade audit data must preserve the threshold unit selected for Portfolio 3');
 assert.equal(percentageTrade.oiThreshold, 0.3);
+
+const oppositeSideStore = new MemoryStore();
+const oppositeSideEngine = createPaperTradeEngine({
+  store: oppositeSideStore,
+  rules: {
+    marketHoursEnabled: true,
+    sessionResetEnabled: true,
+    portfolios: {
+      portfolio1: { ...defaults, enabled: false },
+      portfolio2: { ...defaults, enabled: false },
+      portfolio3: { ...defaults, enabled: true, tradeSide: 'put', oiWindow: 'm5', oppositeSideOiPctEnabled: true, oppositeSideOiPctThreshold: 1 },
+    },
+  },
+  contractLotSizes,
+});
+await oppositeSideEngine.restore();
+const putGrowthPayload = { windows: { m5: { referenceMode: 'clock-aligned-baseline', callItmOiChangePct: 0.7, putItmOiChangePct: 1.2 } } };
+await oppositeSideEngine.process('NIFTY', putGrowthPayload, summary(100, 120, 90_000), 90_000);
+state = oppositeSideEngine.snapshot();
+const putGrowthTrade = state.trades.find((trade) => trade.symbol === 'NIFTY');
+assert.equal(putGrowthTrade.optionType, 'CALL', 'Put OI percentage growth at or above the threshold must buy a Call');
+assert.equal(putGrowthTrade.oiTriggerSource, 'put-oi-percent-to-call');
+assert.equal(putGrowthTrade.oiThresholdMode, 'percentage');
+assert.equal(putGrowthTrade.oiOppositeSidePctThreshold, 1);
+const callGrowthPayload = { windows: { m5: { referenceMode: 'clock-aligned-baseline', callItmOiChangePct: 1.4, putItmOiChangePct: 0.6 } } };
+await oppositeSideEngine.process('SENSEX', callGrowthPayload, summary(100, 120, 91_000), 91_000);
+state = oppositeSideEngine.snapshot();
+const callGrowthTrade = state.trades.find((trade) => trade.symbol === 'SENSEX');
+assert.equal(callGrowthTrade.optionType, 'PUT', 'Call OI percentage growth at or above the threshold must buy a Put');
+assert.equal(callGrowthTrade.oiTriggerSource, 'call-oi-percent-to-put');
+const equalPercentStore = new MemoryStore();
+const equalPercentEngine = createPaperTradeEngine({
+  store: equalPercentStore,
+  rules: { marketHoursEnabled: true, sessionResetEnabled: true, portfolios: { portfolio1: { ...defaults, enabled: false }, portfolio2: { ...defaults, enabled: false }, portfolio3: { ...defaults, enabled: true, oiWindow: 'm5', oppositeSideOiPctEnabled: true, oppositeSideOiPctThreshold: 1 } } },
+  contractLotSizes,
+});
+await equalPercentEngine.restore();
+await equalPercentEngine.process('NIFTY', { windows: { m5: { referenceMode: 'clock-aligned-baseline', callItmOiChangePct: 1.3, putItmOiChangePct: 1.3 } } }, summary(100, 120, 92_000), 92_000);
+assert.equal(equalPercentEngine.snapshot().trades.length, 0, 'equal Call and Put percentage gains must not create an ambiguous opposite-side paper entry');
 console.log('paper trading tests passed');
