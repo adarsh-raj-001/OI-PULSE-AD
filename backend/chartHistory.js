@@ -4,6 +4,7 @@
 import { itmStrikeSets } from './oiWindows.js';
 
 const finite = (value) => {
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
@@ -78,17 +79,21 @@ function sidePoint(side, previous, prefix) {
 }
 
 /**
- * Builds one compact, ATM ±N chart point. OI change is the difference from the
- * immediately preceding retained point, while OI and option price are current
- * near-ATM band values. This keeps each series internally comparable over time
- * without claiming that disparate units share the same price scale.
+ * Builds one compact chart point from exactly three strict ITM Calls below the
+ * underlying and three strict ITM Puts above it. The nearest ATM strike is
+ * retained only as display metadata and never contributes to aggregates.
  */
 export function buildChartPoint(snapshot, previousPoint, strikesEachSide) {
   const strikes = sortedStrikes(snapshot?.strikes);
   const timestamp = finite(snapshot?.t);
   const underlyingPrice = finite(snapshot?.underlyingPrice);
   const { callStrikes, putStrikes, atmStrike } = itmStrikeSets(strikes, underlyingPrice, strikesEachSide);
-  if (timestamp === null || underlyingPrice === null || (!callStrikes.length && !putStrikes.length)) return null;
+  const requiredPerSide = Math.max(1, Math.floor(Number(strikesEachSide) || 0));
+  const selectedLegs = [
+    ...callStrikes.map((strike) => snapshot?.strikes?.[strike]?.ce),
+    ...putStrikes.map((strike) => snapshot?.strikes?.[strike]?.pe),
+  ];
+  if (timestamp === null || underlyingPrice === null || callStrikes.length !== requiredPerSide || putStrikes.length !== requiredPerSide || selectedLegs.some((leg) => legValue(leg, 'oi') === null)) return null;
 
   const call = emptySide();
   const put = emptySide();

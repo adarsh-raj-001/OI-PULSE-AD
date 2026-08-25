@@ -37,10 +37,11 @@ export function itmStrikeSets(strikes, underlyingPrice, count) {
   const requested = Math.max(1, Math.floor(Number(count) || 0));
   if (!Number.isFinite(numericPrice)) return { callStrikes: [], putStrikes: [], atmStrike: null };
   const allStrikes = [...strikes].filter(Number.isFinite).sort((a, b) => a - b);
-  const callStrikes = allStrikes.filter((strike) => strike < numericPrice).slice(-requested).reverse();
-  const putStrikes = allStrikes.filter((strike) => strike > numericPrice).slice(0, requested);
   const atmIndex = nearestStrikeIndex(allStrikes, numericPrice);
-  return { callStrikes, putStrikes, atmStrike: atmIndex === null ? null : allStrikes[atmIndex] };
+  const atmStrike = atmIndex === null ? null : allStrikes[atmIndex];
+  const callStrikes = allStrikes.filter((strike) => strike < numericPrice && strike !== atmStrike).slice(-requested).reverse();
+  const putStrikes = allStrikes.filter((strike) => strike > numericPrice && strike !== atmStrike).slice(0, requested);
+  return { callStrikes, putStrikes, atmStrike };
 }
 
 function legOi(leg) {
@@ -54,7 +55,8 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
   if (!cur?.strikes || !ref?.strikes) return null;
   const allStrikes = sortedStrikes(cur.strikes);
   const { callStrikes, putStrikes, atmStrike } = itmStrikeSets(allStrikes, cur.underlyingPrice, strikesEachSide);
-  if (!callStrikes.length && !putStrikes.length) return null;
+  const requiredPerSide = Math.max(1, Math.floor(Number(strikesEachSide) || 0));
+  if (callStrikes.length !== requiredPerSide || putStrikes.length !== requiredPerSide) return null;
   const band = [];
   let bandDeltaCe = 0;
   let bandDeltaPe = 0;
@@ -62,10 +64,10 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
   const addItmLeg = (strike, optionSide, offset) => {
     const curLeg = cur.strikes[strike];
     const refLeg = ref.strikes[strike];
-    if (!curLeg || !refLeg) return;
+    if (!curLeg || !refLeg) return false;
     const current = legOi(curLeg[optionSide]);
     const reference = legOi(refLeg[optionSide]);
-    if (!Number.isFinite(current) || !Number.isFinite(reference)) return;
+    if (!Number.isFinite(current) || !Number.isFinite(reference)) return false;
     const delta = current - reference;
     const dCe = optionSide === 'ce' ? delta : null;
     const dPe = optionSide === 'pe' ? delta : null;
@@ -73,11 +75,14 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
     else bandDeltaPe += delta;
     bandDeltaTotal += delta;
     band.push({ strike, optionSide, moneyness: 'ITM', offset, dCe, dPe, dTotal: delta });
+    return true;
   };
-  callStrikes.forEach((strike, index) => addItmLeg(strike, 'ce', -(index + 1)));
-  putStrikes.forEach((strike, index) => addItmLeg(strike, 'pe', index + 1));
+  const complete = [
+    ...callStrikes.map((strike, index) => addItmLeg(strike, 'ce', -(index + 1))),
+    ...putStrikes.map((strike, index) => addItmLeg(strike, 'pe', index + 1)),
+  ].every(Boolean);
 
-  if (!band.length) return null;
+  if (!complete || band.length !== requiredPerSide * 2) return null;
   const actualSpanMs = Math.max(0, Number(cur.t) - Number(ref.t));
   return {
     fromT: ref.t,

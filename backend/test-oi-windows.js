@@ -39,9 +39,39 @@ assert.equal(exact.fromT, fiveMinuteReference.t);
 assert.equal(exact.bandDeltaTotal, 12, 'after five minutes, the card must transition to an exact 5-minute reference');
 
 const incompleteCurrent = structuredClone(afterReset);
-incompleteCurrent.strikes[24250].ce.oi = null;
+incompleteCurrent.strikes[24200].ce.oi = null;
 const withoutInventedZero = currentBaselineDelta(baseline, incompleteCurrent, 5 * 60_000, 1);
-assert.equal(withoutInventedZero.band.find((row) => row.strike === 24250 && row.optionSide === 'ce'), undefined, 'a strike with null or missing OI must be excluded, never calculated against a fabricated zero');
-assert.ok(withoutInventedZero.band.every((row) => row.dTotal === (row.dCe ?? row.dPe)), 'each displayed ITM total must equal its selected Call or Put delta');
+assert.equal(withoutInventedZero, null, 'a selected strict ITM strike with missing OI must block the aggregate instead of calculating against a fabricated zero');
+
+function strictItmSummary(t, oiShift = 0) {
+  const strikes = [24000, 24050, 24100, 24150, 24200, 24250, 24300];
+  return {
+    t,
+    underlyingPrice: 24150,
+    strikes: Object.fromEntries(strikes.map((strike, index) => [strike, {
+      ce: { oi: 100 + index + oiShift },
+      pe: { oi: 200 + index + oiShift },
+    }])),
+  };
+}
+
+const strictBaseline = strictItmSummary(1_000);
+const strictCurrent = strictItmSummary(61_000, 10);
+const strictBand = currentBaselineDelta(strictBaseline, strictCurrent, 5 * 60_000, 3);
+assert.deepEqual(strictBand.callItmStrikes, [24100, 24050, 24000], 'three Calls must be strictly below the underlying');
+assert.deepEqual(strictBand.putItmStrikes, [24200, 24250, 24300], 'three Puts must be strictly above the underlying');
+assert.equal(strictBand.atmStrike, 24150, 'the nearest ATM strike is reported only for display');
+assert.equal(strictBand.band.length, 6, 'the aggregate must contain exactly three strict ITM legs on each side');
+assert.ok(strictBand.band.every((row) => row.strike !== 24150 && row.moneyness === 'ITM'), 'ATM must never be included in the aggregate');
+assert.equal(strictBand.bandDeltaCe, 30);
+assert.equal(strictBand.bandDeltaPe, 30);
+
+const missingStrictLeg = strictItmSummary(61_000, 10);
+delete missingStrictLeg.strikes[24300];
+assert.equal(currentBaselineDelta(strictBaseline, missingStrictLeg, 5 * 60_000, 3), null, 'a partial strict-ITM side must not produce a partial OI aggregate');
+
+const incompleteStrictLeg = strictItmSummary(61_000, 10);
+incompleteStrictLeg.strikes[24100].ce.oi = null;
+assert.equal(currentBaselineDelta(strictBaseline, incompleteStrictLeg, 5 * 60_000, 3), null, 'all six strict ITM OI values must be present before calculating a band');
 
 console.log('OI window baseline tests passed');

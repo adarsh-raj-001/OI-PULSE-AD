@@ -246,6 +246,10 @@ state = portfoliosEngine.snapshot();
 assert.equal(state.trades.length, 3, 'each enabled portfolio may hold its own independent paper position for one symbol');
 assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio1').optionType, 'CALL', 'Portfolio 1 follows upward strength into a Call');
 assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio2').optionType, 'PUT', 'Portfolio 2 reverses upward strength into a Put');
+assert.equal(state.rules.portfolios.portfolio1.reverseOrders, false, 'Portfolio 1 defaults to follow-strength order routing');
+assert.equal(state.rules.portfolios.portfolio2.reverseOrders, true, 'Portfolio 2 defaults to reverse-strength order routing');
+assert.equal(state.rules.portfolios.portfolio1.oiWindow, undefined, 'Portfolio 1 must not retain OI trigger settings');
+assert.equal(state.rules.portfolios.portfolio2.oiMetric, undefined, 'Portfolio 2 must not retain OI trigger settings');
 const oiTrade = state.trades.find((trade) => trade.portfolioId === 'portfolio3');
 assert.equal(oiTrade.optionType, 'PUT', 'Portfolio 3 honours its configured trade-side override');
 assert.equal(oiTrade.oiMetric, 'difference');
@@ -254,6 +258,9 @@ assert.equal(portfoliosEngine.activeTrades('NIFTY').length, 3, 'all open portfol
 assert.equal(state.portfolioPerformance.portfolio1.totalTrades, 1);
 assert.equal(state.portfolioPerformance.portfolio2.totalTrades, 1);
 assert.equal(state.portfolioPerformance.portfolio3.totalTrades, 1);
+
+await portfoliosEngine.updateSettings({ portfolios: { portfolio2: { reverseOrders: false } } }, 70_500);
+assert.equal(portfoliosEngine.snapshot().rules.portfolios.portfolio2.reverseOrders, false, 'the Portfolio 2 reverse-orders switch must be independently configurable');
 
 await portfoliosEngine.updateSettings({ portfolios: { portfolio3: { tradeSide: 'call' } } }, 71_000);
 await portfoliosEngine.process('SENSEX', portfoliosPayload, summary(100, 120, 72_000), 72_000);
