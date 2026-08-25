@@ -51,6 +51,11 @@ function legOi(leg) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function changePct(change, baseline) {
+  if (!Number.isFinite(change) || !Number.isFinite(baseline) || baseline === 0) return null;
+  return (change / Math.abs(baseline)) * 100;
+}
+
 function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, referenceMode, provisional }) {
   if (!cur?.strikes || !ref?.strikes) return null;
   const allStrikes = sortedStrikes(cur.strikes);
@@ -61,6 +66,10 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
   let bandDeltaCe = 0;
   let bandDeltaPe = 0;
   let bandDeltaTotal = 0;
+  let callItmOiBaseline = 0;
+  let putItmOiBaseline = 0;
+  let callItmOiCurrent = 0;
+  let putItmOiCurrent = 0;
   const addItmLeg = (strike, optionSide, offset) => {
     const curLeg = cur.strikes[strike];
     const refLeg = ref.strikes[strike];
@@ -71,10 +80,17 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
     const delta = current - reference;
     const dCe = optionSide === 'ce' ? delta : null;
     const dPe = optionSide === 'pe' ? delta : null;
-    if (optionSide === 'ce') bandDeltaCe += delta;
-    else bandDeltaPe += delta;
+    if (optionSide === 'ce') {
+      bandDeltaCe += delta;
+      callItmOiBaseline += reference;
+      callItmOiCurrent += current;
+    } else {
+      bandDeltaPe += delta;
+      putItmOiBaseline += reference;
+      putItmOiCurrent += current;
+    }
     bandDeltaTotal += delta;
-    band.push({ strike, optionSide, moneyness: 'ITM', offset, dCe, dPe, dTotal: delta });
+    band.push({ strike, optionSide, moneyness: 'ITM', offset, referenceOi: reference, currentOi: current, oiChangePct: changePct(delta, reference), dCe, dPe, dTotal: delta });
     return true;
   };
   const complete = [
@@ -84,6 +100,21 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
 
   if (!complete || band.length !== requiredPerSide * 2) return null;
   const actualSpanMs = Math.max(0, Number(cur.t) - Number(ref.t));
+  const callItmOiChangePct = changePct(bandDeltaCe, callItmOiBaseline);
+  const putItmOiChangePct = changePct(bandDeltaPe, putItmOiBaseline);
+  const bandDeltaTotalPct = changePct(bandDeltaTotal, callItmOiBaseline + putItmOiBaseline);
+  const bandDeltaDifferencePct = callItmOiChangePct === null || putItmOiChangePct === null ? null : callItmOiChangePct - putItmOiChangePct;
+  const marketStrength = buildMarketStrength({ cur, ref, band, actualSpanMs });
+  marketStrength.aggregates = {
+    ...marketStrength.aggregates,
+    callWindowOiBaseline: callItmOiBaseline,
+    putWindowOiBaseline: putItmOiBaseline,
+    callWindowOiCurrent: callItmOiCurrent,
+    putWindowOiCurrent: putItmOiCurrent,
+    callWindowOiChangePct: callItmOiChangePct,
+    putWindowOiChangePct: putItmOiChangePct,
+    totalWindowOiChangePct: bandDeltaTotalPct,
+  };
   return {
     fromT: ref.t,
     toT: cur.t,
@@ -99,7 +130,15 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
     bandDeltaCe,
     bandDeltaPe,
     bandDeltaTotal,
-    marketStrength: buildMarketStrength({ cur, ref, band, actualSpanMs }),
+    callItmOiBaseline,
+    putItmOiBaseline,
+    callItmOiCurrent,
+    putItmOiCurrent,
+    callItmOiChangePct,
+    putItmOiChangePct,
+    bandDeltaTotalPct,
+    bandDeltaDifferencePct,
+    marketStrength,
   };
 }
 
