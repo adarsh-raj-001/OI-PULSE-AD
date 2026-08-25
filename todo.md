@@ -132,4 +132,4 @@
 - [x] Replace duplicated per-strike “Side total” values with meaningful baseline/current OI information and make selected-strike percentage change plainly visible.
 - [x] Clarify three-Call, three-Put, and combined OI aggregate totals without repeating the per-strike change.
 - [x] Validate the corrected compact mobile layout, data labels, frontend/docs parity, and paper-only safeguards before review publication.
-- [ ] Publish the reviewed OI-card data-representation correction through a pull request.
+- [x] Publish the reviewed OI-card data-representation correction through a pull request.
