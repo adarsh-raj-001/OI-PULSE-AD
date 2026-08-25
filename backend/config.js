@@ -88,6 +88,7 @@ export const config = {
     stopLossPoints: Number(tunables.paperTrading?.stopLossPoints) || 5,
     maxAliveSeconds: Math.max(0, Number(tunables.paperTrading?.maxAliveSeconds) || 0),
     cooldownSeconds: Math.max(0, Number(tunables.paperTrading?.cooldownSeconds) || 0),
+    portfolios: tunables.paperTrading?.portfolios || undefined,
   },
 };
 

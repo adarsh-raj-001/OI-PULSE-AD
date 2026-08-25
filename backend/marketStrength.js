@@ -63,7 +63,10 @@ export function buildMarketStrength({ cur, ref, band, actualSpanMs }) {
     const now = cur.strikes[row.strike];
     const before = ref.strikes[row.strike];
     if (!now || !before) continue;
-    for (const [side, field, windowChange] of [['ce', call, row.dCe], ['pe', put, row.dPe]]) {
+    const selectedLegs = row.optionSide
+      ? [[row.optionSide, row.optionSide === 'ce' ? call : put, row.optionSide === 'ce' ? row.dCe : row.dPe]]
+      : [['ce', call, row.dCe], ['pe', put, row.dPe]];
+    for (const [side, field, windowChange] of selectedLegs) {
       const currentLeg = now[side];
       const referenceLeg = before[side];
       if (!currentLeg) continue;

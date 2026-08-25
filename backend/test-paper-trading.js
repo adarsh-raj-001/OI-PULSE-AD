@@ -219,4 +219,51 @@ state = settingsRestored.snapshot();
 assert.equal(state.rules.lots, 20, 'screen-edited simulator controls must persist across restart');
 assert.equal(state.rules.enabled, true);
 assert.equal(state.rules.strengthThreshold, 30, 'numeric strength controls must persist across restart');
+
+const portfoliosStore = new MemoryStore();
+const portfoliosEngine = createPaperTradeEngine({
+  store: portfoliosStore,
+  rules: {
+    marketHoursEnabled: true,
+    sessionResetEnabled: true,
+    portfolios: {
+      portfolio1: { ...defaults, enabled: true, symbolEnabled: { NIFTY: true, SENSEX: false } },
+      portfolio2: { ...defaults, enabled: true, symbolEnabled: { NIFTY: true, SENSEX: false } },
+      portfolio3: { ...defaults, enabled: true, symbolEnabled: { NIFTY: true, SENSEX: true }, tradeSide: 'put', oiWindow: 'm30', oiMetric: 'difference', oiThreshold: 500 },
+    },
+  },
+  contractLotSizes,
+});
+await portfoliosEngine.restore();
+const portfoliosPayload = {
+  windows: {
+    m5: { referenceMode: 'exact-window', marketStrength: { label: 'Strong upward pressure', intensity: 80, direction: 'up' } },
+    m30: { referenceMode: 'exact-window', bandDeltaCe: 800, bandDeltaPe: 200 },
+  },
+};
+await portfoliosEngine.process('NIFTY', portfoliosPayload, summary(100, 120, 70_000), 70_000);
+state = portfoliosEngine.snapshot();
+assert.equal(state.trades.length, 3, 'each enabled portfolio may hold its own independent paper position for one symbol');
+assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio1').optionType, 'CALL', 'Portfolio 1 follows upward strength into a Call');
+assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio2').optionType, 'PUT', 'Portfolio 2 reverses upward strength into a Put');
+const oiTrade = state.trades.find((trade) => trade.portfolioId === 'portfolio3');
+assert.equal(oiTrade.optionType, 'PUT', 'Portfolio 3 honours its configured trade-side override');
+assert.equal(oiTrade.oiMetric, 'difference');
+assert.equal(oiTrade.oiValueAtSignal, 600, 'Portfolio 3 uses the selected signed ITM OI metric');
+assert.equal(portfoliosEngine.activeTrades('NIFTY').length, 3, 'all open portfolio positions remain independently subscribable for fresh option LTP monitoring');
+assert.equal(state.portfolioPerformance.portfolio1.totalTrades, 1);
+assert.equal(state.portfolioPerformance.portfolio2.totalTrades, 1);
+assert.equal(state.portfolioPerformance.portfolio3.totalTrades, 1);
+
+await portfoliosEngine.updateSettings({ portfolios: { portfolio3: { tradeSide: 'call' } } }, 71_000);
+await portfoliosEngine.process('SENSEX', portfoliosPayload, summary(100, 120, 72_000), 72_000);
+state = portfoliosEngine.snapshot();
+assert.equal(state.trades.filter((trade) => trade.portfolioId === 'portfolio3').length, 2, 'Portfolio 3 may open independently on another enabled symbol');
+assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio3' && trade.symbol === 'SENSEX').optionType, 'CALL', 'the selectable trade side can route OI triggers to Calls');
+
+await portfoliosEngine.updateSettings({ portfolios: { portfolio2: { enabled: false } } }, 73_000);
+state = portfoliosEngine.snapshot();
+assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio2').closeReason, 'portfolio-disabled', 'disabling one portfolio closes only its own open paper position');
+assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio1').status, 'open', 'other portfolios remain active when one portfolio is disabled');
+assert.equal(state.rules.portfolios.portfolio2.enabled, false);
 console.log('paper trading tests passed');

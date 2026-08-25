@@ -28,6 +28,21 @@ export function bandStep(strikes) {
   return steps.length && steps.every((step) => step === steps[0]) ? steps[0] : null;
 }
 
+/**
+ * Calls are strictly ITM below the underlying price; puts are strictly ITM
+ * above it. Each returned list starts with the closest available ITM strike.
+ */
+export function itmStrikeSets(strikes, underlyingPrice, count) {
+  const numericPrice = Number(underlyingPrice);
+  const requested = Math.max(1, Math.floor(Number(count) || 0));
+  if (!Number.isFinite(numericPrice)) return { callStrikes: [], putStrikes: [], atmStrike: null };
+  const allStrikes = [...strikes].filter(Number.isFinite).sort((a, b) => a - b);
+  const callStrikes = allStrikes.filter((strike) => strike < numericPrice).slice(-requested).reverse();
+  const putStrikes = allStrikes.filter((strike) => strike > numericPrice).slice(0, requested);
+  const atmIndex = nearestStrikeIndex(allStrikes, numericPrice);
+  return { callStrikes, putStrikes, atmStrike: atmIndex === null ? null : allStrikes[atmIndex] };
+}
+
 function legOi(leg) {
   const value = typeof leg === 'object' && leg !== null ? leg.oi : leg;
   if (value === null || value === undefined || value === '') return null;
@@ -38,37 +53,29 @@ function legOi(leg) {
 function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, referenceMode, provisional }) {
   if (!cur?.strikes || !ref?.strikes) return null;
   const allStrikes = sortedStrikes(cur.strikes);
-  const atmIndex = nearestStrikeIndex(allStrikes, cur.underlyingPrice);
-  if (atmIndex === null) return null;
-
-  const atm = allStrikes[atmIndex];
+  const { callStrikes, putStrikes, atmStrike } = itmStrikeSets(allStrikes, cur.underlyingPrice, strikesEachSide);
+  if (!callStrikes.length && !putStrikes.length) return null;
   const band = [];
   let bandDeltaCe = 0;
   let bandDeltaPe = 0;
   let bandDeltaTotal = 0;
-  for (let offset = -strikesEachSide; offset <= strikesEachSide; offset += 1) {
-    const strikeIndex = atmIndex + offset;
-    if (strikeIndex < 0 || strikeIndex >= allStrikes.length) continue;
-    const strike = allStrikes[strikeIndex];
+  const addItmLeg = (strike, optionSide, offset) => {
     const curLeg = cur.strikes[strike];
     const refLeg = ref.strikes[strike];
-    if (!curLeg || !refLeg) continue;
-    const curCe = legOi(curLeg.ce);
-    const refCe = legOi(refLeg.ce);
-    const curPe = legOi(curLeg.pe);
-    const refPe = legOi(refLeg.pe);
-    // Display only strikes whose Call and Put OI are real values on both
-    // sides of the comparison. This keeps Total exactly equal to Call + Put
-    // and avoids treating an absent Dhan field as a literal zero OI value.
-    if (![curCe, refCe, curPe, refPe].every(Number.isFinite)) continue;
-    const dCe = curCe - refCe;
-    const dPe = curPe - refPe;
-    const dTotal = dCe + dPe;
-    bandDeltaCe += dCe;
-    bandDeltaPe += dPe;
-    bandDeltaTotal += dTotal;
-    band.push({ strike, isATM: offset === 0, offset, dCe, dPe, dTotal });
-  }
+    if (!curLeg || !refLeg) return;
+    const current = legOi(curLeg[optionSide]);
+    const reference = legOi(refLeg[optionSide]);
+    if (!Number.isFinite(current) || !Number.isFinite(reference)) return;
+    const delta = current - reference;
+    const dCe = optionSide === 'ce' ? delta : null;
+    const dPe = optionSide === 'pe' ? delta : null;
+    if (optionSide === 'ce') bandDeltaCe += delta;
+    else bandDeltaPe += delta;
+    bandDeltaTotal += delta;
+    band.push({ strike, optionSide, moneyness: 'ITM', offset, dCe, dPe, dTotal: delta });
+  };
+  callStrikes.forEach((strike, index) => addItmLeg(strike, 'ce', -(index + 1)));
+  putStrikes.forEach((strike, index) => addItmLeg(strike, 'pe', index + 1));
 
   if (!band.length) return null;
   const actualSpanMs = Math.max(0, Number(cur.t) - Number(ref.t));
@@ -79,9 +86,11 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
     requestedWindowMs,
     referenceMode,
     provisional,
-    atmStrike: atm,
+    atmStrike,
     strikeStep: bandStep(allStrikes),
     band,
+    callItmStrikes: callStrikes,
+    putItmStrikes: putStrikes,
     bandDeltaCe,
     bandDeltaPe,
     bandDeltaTotal,
