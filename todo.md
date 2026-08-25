@@ -133,3 +133,17 @@
 - [x] Clarify three-Call, three-Put, and combined OI aggregate totals without repeating the per-strike change.
 - [x] Validate the corrected compact mobile layout, data labels, frontend/docs parity, and paper-only safeguards before review publication.
 - [x] Publish the reviewed OI-card data-representation correction through a pull request.
+- [ ] Diagnose why the public mobile browser still renders the legacy OI-card template after the merged GitHub Pages update.
+- [ ] Correct the public delivery or cache path so the percentage and non-duplicative strict-ITM layout reaches mobile browsers.
+- [ ] Verify the live public dashboard source and report the resolution without changing paper-trading state.
+- [x] Correct positive paper-entry offsets so ₹1 means a pending entry ₹1 below the current option price, not above it.
+- [x] Validate pending-entry target prices and fill conditions for Call and Put paper trades without broker execution.
+- [x] Publish the reviewed paper-entry offset direction correction through a pull request.
+- [x] Add configurable Portfolio 3 percentage triggers that buy a Call from Put OI percentage growth and buy a Put from Call OI percentage growth.
+- [x] Replace rolling OI-window comparisons with aligned five-minute, 30-minute, and three-hour baseline resets that set the delta to zero from the current snapshot.
+- [x] Validate opposite-side percentage trigger routing, aligned reset timing, zero-delta semantics, dashboard clarity, durable history, and paper-only safeguards.
+- [x] Publish the reviewed Portfolio 3 OI-percentage trigger and aligned-window reset update through a pull request.
+- [x] Make the mobile settings sheet reset to its top position every time it opens so no upper controls are hidden.
+- [x] Add an accessible upper-left back button that closes settings without applying changes.
+- [x] Validate the mobile portrait settings layout, back interaction, frontend/docs parity, and paper-only safeguards before review publication.
+- [ ] Publish the reviewed mobile settings-sheet navigation correction through a pull request.
