@@ -48,10 +48,12 @@ function wholeSeconds(value, fallback, name) {
 }
 
 function premiumOffset(value, fallback) {
-  if (value === undefined || value === null || value === '') return fallback;
-  const parsed = finite(value);
-  if (parsed === null || Math.abs(parsed) > MAX_PREMIUM_OFFSET) throw new Error(`Premium offset must be between -${MAX_PREMIUM_OFFSET} and ${MAX_PREMIUM_OFFSET}.`);
-  return parsed;
+  const candidate = value === undefined || value === null || value === '' ? fallback : value;
+  const parsed = finite(candidate);
+  if (parsed === null || Math.abs(parsed) > MAX_PREMIUM_OFFSET) throw new Error(`Entry discount must be between 0 and ${MAX_PREMIUM_OFFSET}.`);
+  // Before this correction, a negative offset represented a lower pending limit.
+  // Retain that user's intended lower-price behavior when old settings are restored.
+  return Math.abs(parsed);
 }
 
 function selectValue(value, allowed, fallback, name) {
@@ -476,7 +478,7 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
     const option = atmOption(summary, optionSide, timestamp);
     if (!option) return false;
     const offset = portfolio.entryPremiumOffset;
-    const requestedEntryPrice = Math.max(0.01, option.marketPrice + offset);
+    const requestedEntryPrice = Math.max(0.01, option.marketPrice - offset);
     const pending = offset !== 0;
     const expiresAt = portfolio.maxAliveSeconds > 0 ? timestamp + (portfolio.maxAliveSeconds * 1000) : null;
     const trade = {
@@ -498,7 +500,7 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
       marketPriceObservedAt: option.observedAt,
       requestedEntryPrice,
       entryPremiumOffset: offset,
-      entryCondition: offset < 0 ? 'at-or-below' : offset > 0 ? 'at-or-above' : 'market',
+      entryCondition: offset > 0 ? 'at-or-below' : 'market',
       entryPrice: pending ? null : option.marketPrice,
       entryPriceSource: pending ? null : 'live-option-ltp',
       entryPriceObservedAt: pending ? null : option.observedAt,
