@@ -128,4 +128,4 @@
 - [x] Add side-specific and selected-metric OI percentage-change information to the OI cards and Portfolio 3 signal data.
 - [x] Add configurable absolute-number versus percentage threshold modes to Portfolio 3, including the appropriate threshold input and persisted settings.
 - [x] Validate three-ITM OI deltas, percentage math, Portfolio 3 routing, dashboard parity, and paper-only safeguards before review publication.
-- [ ] Publish the reviewed three-ITM OI percentage and Portfolio 3 threshold-mode update through a pull request.
+- [x] Publish the reviewed three-ITM OI percentage and Portfolio 3 threshold-mode update through a pull request.
