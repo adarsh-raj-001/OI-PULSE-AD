@@ -123,4 +123,4 @@
 - [x] Add a paper-only manual-exit API that closes only a selected open paper trade at its latest observed option price.
 - [x] Add an Exit now control to each rendered open paper position with clear closing feedback and an auditable `manual-exit` reason.
 - [x] Validate manual exits, persistence, portfolio isolation, frontend/docs parity, and paper-only safeguards before review publication.
-- [ ] Publish the reviewed paper-only manual-exit feature through a pull request.
+- [x] Publish the reviewed paper-only manual-exit feature through a pull request.
