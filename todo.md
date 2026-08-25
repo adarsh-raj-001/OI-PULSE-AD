@@ -147,3 +147,4 @@
 - [x] Add an accessible upper-left back button that closes settings without applying changes.
 - [x] Validate the mobile portrait settings layout, back interaction, frontend/docs parity, and paper-only safeguards before review publication.
 - [x] Publish the reviewed mobile settings-sheet navigation correction through a pull request.
+- [x] Merge approved PRs #24, #25, and #26 into main in order and verify their combined repository state.
