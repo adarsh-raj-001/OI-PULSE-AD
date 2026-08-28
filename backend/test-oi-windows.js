@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { clockAlignedWindowDelta, currentBaselineDelta, exactWindowDelta, standardClockWindowStart } from './oiWindows.js';
+import { clockAlignedWindowDelta, currentBaselineDelta, exactWindowDelta, farItmStrikeSets, standardClockWindowStart } from './oiWindows.js';
 
 function summary(t, oiShift = 0) {
   return {
@@ -108,5 +108,28 @@ assert.equal(currentBaselineDelta(strictBaseline, missingStrictLeg, 5 * 60_000, 
 const incompleteStrictLeg = strictItmSummary(61_000, 10);
 incompleteStrictLeg.strikes[24100].ce.oi = null;
 assert.equal(currentBaselineDelta(strictBaseline, incompleteStrictLeg, 5 * 60_000, 3), null, 'all six strict ITM OI values must be present before calculating a band');
+
+const farStrikes = [23850, 23900, 23950, 24000, 24050, 24100, 24150, 24200, 24250, 24300, 24350, 24400, 24450];
+const farSelection = farItmStrikeSets(farStrikes, 24150, 3, 3);
+assert.deepEqual(farSelection.callStrikes, [23950, 23900, 23850], 'far Call OI must skip the three closest Calls and use the next three');
+assert.deepEqual(farSelection.putStrikes, [24350, 24400, 24450], 'far Put OI must skip the three closest Puts and use the next three');
+assert.equal(farSelection.atmStrike, 24150, 'far OI must report ATM for display but never count it');
+const farSummary = (t, oiShift = 0) => ({
+  t,
+  underlyingPrice: 24150,
+  strikes: Object.fromEntries(farStrikes.map((strike, index) => [strike, {
+    ce: { oi: 100 + index + oiShift },
+    pe: { oi: 200 + index + oiShift },
+  }])),
+});
+const farBand = currentBaselineDelta(farSummary(1_000), farSummary(61_000, 10), 5 * 60_000, 3, 'far-itm', 3);
+assert.equal(farBand.selectionMode, 'far-itm');
+assert.equal(farBand.excludedStrikeCount, 3);
+assert.equal(farBand.band.length, 6, 'far OI must contain exactly three farther legs on each side');
+assert.ok(farBand.band.every((row) => row.moneyness === 'FAR ITM' && row.strike !== 24150), 'far OI must exclude ATM and label the selected legs clearly');
+assert.equal(farBand.bandDeltaCe, 30);
+assert.equal(farBand.bandDeltaPe, 30);
+assert.equal(farBand.callItmOiBaseline, 303, 'far Call OI baseline must use only the selected farther Calls');
+assert.equal(farBand.putItmOiBaseline, 633, 'far Put OI baseline must use only the selected farther Puts');
 
 console.log('OI window baseline tests passed');

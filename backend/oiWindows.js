@@ -44,6 +44,29 @@ export function itmStrikeSets(strikes, underlyingPrice, count) {
   return { callStrikes, putStrikes, atmStrike };
 }
 
+/**
+ * Farther ITM selection excludes the three strict-ITM strikes nearest to the
+ * underlying on each side, then returns the next requested strikes. The ATM
+ * strike is never counted because the input sets remain strictly below/above.
+ */
+export function farItmStrikeSets(strikes, underlyingPrice, count, skip = 3) {
+  const numericPrice = Number(underlyingPrice);
+  const requested = Math.max(1, Math.floor(Number(count) || 0));
+  const excluded = Math.max(0, Math.floor(Number(skip) || 0));
+  if (!Number.isFinite(numericPrice)) return { callStrikes: [], putStrikes: [], atmStrike: null, excludedStrikeCount: excluded };
+  const allStrikes = [...strikes].filter(Number.isFinite).sort((a, b) => a - b);
+  const atmIndex = nearestStrikeIndex(allStrikes, numericPrice);
+  const atmStrike = atmIndex === null ? null : allStrikes[atmIndex];
+  const callsNearestFirst = allStrikes.filter((strike) => strike < numericPrice && strike !== atmStrike).slice().reverse();
+  const putsNearestFirst = allStrikes.filter((strike) => strike > numericPrice && strike !== atmStrike);
+  return {
+    callStrikes: callsNearestFirst.slice(excluded, excluded + requested),
+    putStrikes: putsNearestFirst.slice(excluded, excluded + requested),
+    atmStrike,
+    excludedStrikeCount: excluded,
+  };
+}
+
 function legOi(leg) {
   const value = typeof leg === 'object' && leg !== null ? leg.oi : leg;
   if (value === null || value === undefined || value === '') return null;
@@ -56,10 +79,13 @@ function changePct(change, baseline) {
   return (change / Math.abs(baseline)) * 100;
 }
 
-function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, referenceMode, provisional, windowStartAt = null, windowEndAt = null }) {
+function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, referenceMode, provisional, windowStartAt = null, windowEndAt = null, selectionMode = 'strict-itm', excludedStrikeCount = 0 }) {
   if (!cur?.strikes || !ref?.strikes) return null;
   const allStrikes = sortedStrikes(cur.strikes);
-  const { callStrikes, putStrikes, atmStrike } = itmStrikeSets(allStrikes, cur.underlyingPrice, strikesEachSide);
+  const selection = selectionMode === 'far-itm'
+    ? farItmStrikeSets(allStrikes, cur.underlyingPrice, strikesEachSide, excludedStrikeCount)
+    : itmStrikeSets(allStrikes, cur.underlyingPrice, strikesEachSide);
+  const { callStrikes, putStrikes, atmStrike } = selection;
   const requiredPerSide = Math.max(1, Math.floor(Number(strikesEachSide) || 0));
   if (callStrikes.length !== requiredPerSide || putStrikes.length !== requiredPerSide) return null;
   const band = [];
@@ -90,7 +116,8 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
       putItmOiCurrent += current;
     }
     bandDeltaTotal += delta;
-    band.push({ strike, optionSide, moneyness: 'ITM', offset, referenceOi: reference, currentOi: current, oiChangePct: changePct(delta, reference), dCe, dPe, dTotal: delta });
+    const depth = (selectionMode === 'far-itm' ? excludedStrikeCount : 0) + Math.abs(offset);
+    band.push({ strike, optionSide, moneyness: selectionMode === 'far-itm' ? 'FAR ITM' : 'ITM', offset: optionSide === 'ce' ? -depth : depth, referenceOi: reference, currentOi: current, oiChangePct: changePct(delta, reference), dCe, dPe, dTotal: delta });
     return true;
   };
   const complete = [
@@ -124,6 +151,8 @@ function calculateBandDelta({ cur, ref, strikesEachSide, requestedWindowMs, refe
     provisional,
     windowStartAt,
     windowEndAt,
+    selectionMode,
+    excludedStrikeCount: selectionMode === 'far-itm' ? excludedStrikeCount : 0,
     atmStrike,
     strikeStep: bandStep(allStrikes),
     band,
@@ -184,7 +213,7 @@ export function standardClockWindowStart(nowMs, windowMs) {
 // in the block use that same current-market baseline rather than a rolling
 // lookback. A manual/session reset naturally behaves the same way because it
 // clears retained snapshots and starts a new real snapshot history.
-export function clockAlignedWindowDelta(history, nowMs, windowMs, strikesEachSide) {
+export function clockAlignedWindowDelta(history, nowMs, windowMs, strikesEachSide, selectionMode = 'strict-itm', excludedStrikeCount = 0) {
   if (!Array.isArray(history) || !history.length) return null;
   const cur = history[history.length - 1];
   const windowStartAt = standardClockWindowStart(nowMs, windowMs);
@@ -200,13 +229,15 @@ export function clockAlignedWindowDelta(history, nowMs, windowMs, strikesEachSid
     provisional: false,
     windowStartAt,
     windowEndAt: windowStartAt + windowMs,
+    selectionMode,
+    excludedStrikeCount,
   });
 }
 
 // Before a complete interval exists, use the real start/reset snapshot as the
 // reference. This makes all cards immediately readable at zero on reset,
 // rather than fabricating a zero-valued market or withholding the card.
-export function currentBaselineDelta(baseline, current, windowMs, strikesEachSide) {
+export function currentBaselineDelta(baseline, current, windowMs, strikesEachSide, selectionMode = 'strict-itm', excludedStrikeCount = 0) {
   return calculateBandDelta({
     cur: current,
     ref: baseline,
@@ -214,5 +245,7 @@ export function currentBaselineDelta(baseline, current, windowMs, strikesEachSid
     requestedWindowMs: windowMs,
     referenceMode: 'current-market-baseline',
     provisional: true,
+    selectionMode,
+    excludedStrikeCount,
   });
 }

@@ -1,9 +1,8 @@
 // OI Pulse — backend relay
 // Polls an option chain data source (Dhan, or the free NSE feed — see
-// config.json's dataSource) for each configured symbol, tracks OI at the
-// at-the-money strike plus N strikes above/below, computes standard-clock
-// 5m/30m/3h deltas per strike, streams over SSE, and pushes a notification when
-// a window's combined change crosses its configured threshold.
+// config.json's dataSource) for each configured symbol, tracks the strict ITM
+// band and a separate farther-strike band, computes standard-clock 5m/30m/3h
+// deltas, streams over SSE, and pushes notifications for configured thresholds.
 
 import express from 'express';
 import cors from 'cors';
@@ -19,7 +18,7 @@ import { isLiveFeedFresh, resolveDashboardStatus } from './liveStatus.js';
 import { createHistoryStore } from './historyStore.js';
 import { createPaperTradeStore } from './paperTradeStore.js';
 import { createPaperTradeEngine } from './paperTrading.js';
-import { clockAlignedWindowDelta, itmStrikeSets, sortedStrikes } from './oiWindows.js';
+import { clockAlignedWindowDelta, farItmStrikeSets, itmStrikeSets, sortedStrikes } from './oiWindows.js';
 
 const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 
@@ -77,7 +76,8 @@ function computePayload(name) {
   if (!hist.length) return null;
   const cur = hist[hist.length - 1];
   const baseline = hist.find((snapshot) => snapshot.resetBaseline === true) || hist[0];
-  const windowFor = (windowMs) => clockAlignedWindowDelta(hist, cur.t, windowMs, config.strikesEachSide);
+  const windowFor = (windowMs) => clockAlignedWindowDelta(hist, cur.t, windowMs, config.strikesEachSide, 'strict-itm', 0);
+  const farWindowFor = (windowMs) => clockAlignedWindowDelta(hist, cur.t, windowMs, config.farOiStrikesEachSide, 'far-itm', config.farOiSkipStrikes);
   return {
     symbol: name,
     updatedAt: cur.t,
@@ -91,6 +91,16 @@ function computePayload(name) {
       m5: windowFor(5 * 60 * 1000),
       m30: windowFor(30 * 60 * 1000),
       h3: windowFor(3 * 60 * 60 * 1000),
+    },
+    farOiWindows: {
+      m5: farWindowFor(5 * 60 * 1000),
+      m30: farWindowFor(30 * 60 * 1000),
+      h3: farWindowFor(3 * 60 * 60 * 1000),
+    },
+    farOiSelection: {
+      excludedStrikeCount: config.farOiSkipStrikes,
+      strikesEachSide: config.farOiStrikesEachSide,
+      description: `Excludes the ${config.farOiSkipStrikes} closest strict-ITM strikes on each side, then calculates the next ${config.farOiStrikesEachSide} strikes.`,
     },
   };
 }
@@ -168,7 +178,10 @@ function recordSnapshot(name, summary, t, { eventDriven = false, restState: next
 function activeBandSubscriptions(sym, summary) {
   const strikes = sortedStrikes(summary.strikes);
   const { callStrikes, putStrikes } = itmStrikeSets(strikes, summary.underlyingPrice, config.strikesEachSide);
-  if (!callStrikes.length && !putStrikes.length) return [];
+  const farSelection = farItmStrikeSets(strikes, summary.underlyingPrice, config.farOiStrikesEachSide, config.farOiSkipStrikes);
+  const selectedCallStrikes = [...new Set([...callStrikes, ...farSelection.callStrikes])];
+  const selectedPutStrikes = [...new Set([...putStrikes, ...farSelection.putStrikes])];
+  if (!selectedCallStrikes.length && !selectedPutStrikes.length) return [];
   const optionSegment = sym.name === 'SENSEX' ? 'BSE_FNO' : 'NSE_FNO';
   const subscriptions = [{
     exchangeSegment: 'IDX_I',
@@ -176,7 +189,7 @@ function activeBandSubscriptions(sym, summary) {
     symbol: sym.name,
     kind: 'underlying',
   }];
-  for (const [side, selected] of [['ce', callStrikes], ['pe', putStrikes]]) {
+  for (const [side, selected] of [['ce', selectedCallStrikes], ['pe', selectedPutStrikes]]) {
     for (const strike of selected) {
       const securityId = Number(summary.strikes[strike]?.[side]?.securityId);
       if (!Number.isFinite(securityId)) continue;

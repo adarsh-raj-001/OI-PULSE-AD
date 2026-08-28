@@ -59,6 +59,8 @@ export const config = {
   dataSource,
   symbols: tunables.symbolsBySource[dataSource],
   strikesEachSide: tunables.strikesEachSide,
+  farOiStrikesEachSide: Math.max(1, Number(tunables.farOiStrikesEachSide) || Number(tunables.strikesEachSide) || 3),
+  farOiSkipStrikes: Math.max(0, Number(tunables.farOiSkipStrikes) || 3),
   pollIntervalMs: tunables.pollIntervalMs,
   optionChainRateLimitBackoffMs: Number(tunables.optionChainRateLimitBackoffMs) || 15_000,
   liveFeedFreshnessMs: Number(tunables.liveFeedFreshnessMs) || 15_000,
