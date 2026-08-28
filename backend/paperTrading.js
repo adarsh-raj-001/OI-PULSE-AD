@@ -10,12 +10,13 @@ const MAX_PREMIUM_OFFSET = 10_000;
 const OI_WINDOWS = ['m5', 'm30', 'h3'];
 const OI_METRICS = ['call', 'put', 'combined', 'difference'];
 const OI_THRESHOLD_MODES = ['number', 'percentage'];
+const PORTFOLIO_OI_TRIGGER_MODES = ['negative-same-side', 'positive-opposite-side'];
 const TRADE_SIDES = ['auto', 'call', 'put'];
 const COMPLETED_OI_REFERENCE_MODES = ['exact-window', 'clock-aligned-baseline'];
 
 export const PAPER_PORTFOLIOS = {
-  portfolio1: { id: 'portfolio1', label: 'Portfolio 1 · Strength strategy', strategy: 'market-strength' },
-  portfolio2: { id: 'portfolio2', label: 'Portfolio 2 · Strength strategy', strategy: 'market-strength' },
+  portfolio1: { id: 'portfolio1', label: 'Portfolio 1 · Negative OI', strategy: 'market-strength' },
+  portfolio2: { id: 'portfolio2', label: 'Portfolio 2 · Positive OI reverse', strategy: 'market-strength' },
   portfolio3: { id: 'portfolio3', label: 'Portfolio 3 · OI threshold', strategy: 'oi-threshold', directionMode: 'oi' },
 };
 
@@ -78,7 +79,15 @@ function defaultPortfolio(id) {
     strategy: meta.strategy,
   };
   if (id === 'portfolio3') return { ...shared, tradeSide: 'auto', oiWindow: 'm5', oiMetric: 'combined', oiThresholdMode: 'number', oiThreshold: 1, oppositeSideOiPctEnabled: false, oppositeSideOiPctThreshold: 1, directionMode: 'oi' };
-  return { ...shared, reverseOrders: id === 'portfolio2' };
+  return {
+    ...shared,
+    reverseOrders: id === 'portfolio2',
+    oiTriggerEnabled: true,
+    oiWindow: 'm5',
+    oiThresholdMode: 'percentage',
+    oiThreshold: 5,
+    oiTriggerMode: id === 'portfolio1' ? 'negative-same-side' : 'positive-opposite-side',
+  };
 }
 
 function normalizePortfolio(input = {}, base = {}, id) {
@@ -100,6 +109,12 @@ function normalizePortfolio(input = {}, base = {}, id) {
     cooldownSeconds: wholeSeconds(input.cooldownSeconds, fallback.cooldownSeconds, 'Cooldown'),
     strategy: PAPER_PORTFOLIOS[id].strategy,
   };
+  const oiFields = {
+    oiTriggerEnabled: input.oiTriggerEnabled === undefined ? fallback.oiTriggerEnabled === true : input.oiTriggerEnabled === true,
+    oiWindow: selectValue(input.oiWindow, OI_WINDOWS, fallback.oiWindow, 'OI window'),
+    oiThresholdMode: 'percentage',
+    oiThreshold: positiveNumber(input.oiThreshold, fallback.oiThreshold, 'OI percentage threshold'),
+  };
   if (id === 'portfolio3') return {
     ...normalized,
     tradeSide: selectValue(input.tradeSide, TRADE_SIDES, fallback.tradeSide, 'Trade side'),
@@ -111,7 +126,12 @@ function normalizePortfolio(input = {}, base = {}, id) {
     oppositeSideOiPctThreshold: positiveNumber(input.oppositeSideOiPctThreshold, fallback.oppositeSideOiPctThreshold, 'Opposite-side OI percentage threshold'),
     directionMode: 'oi',
   };
-  return { ...normalized, reverseOrders: input.reverseOrders === undefined ? fallback.reverseOrders === true : input.reverseOrders === true };
+  return {
+    ...normalized,
+    ...oiFields,
+    reverseOrders: input.reverseOrders === undefined ? fallback.reverseOrders === true : input.reverseOrders === true,
+    oiTriggerMode: selectValue(input.oiTriggerMode, PORTFOLIO_OI_TRIGGER_MODES, fallback.oiTriggerMode, 'Portfolio OI trigger mode'),
+  };
 }
 
 function normalizeRules(input = {}, base = {}) {
@@ -163,6 +183,41 @@ function marketStrengthSignal(payload, portfolio) {
     intensity: preferred.window.marketStrength.intensity,
     label: preferred.window.marketStrength.label,
     triggerType: portfolio.reverseOrders ? 'reverse-market-strength' : 'market-strength',
+  };
+}
+
+function portfolioOiPercentageSignal(payload, portfolio) {
+  const labels = { m5: '5 Min', m30: '30 Min', h3: '3 Hour' };
+  const window = payload?.windows?.[portfolio.oiWindow];
+  if (!window || !COMPLETED_OI_REFERENCE_MODES.includes(window.referenceMode)) return null;
+  const callPct = finite(window.callItmOiChangePct);
+  const putPct = finite(window.putItmOiChangePct);
+  const threshold = finite(portfolio.oiThreshold);
+  if (callPct === null || putPct === null || threshold === null || threshold <= 0) return null;
+  const negativeSameSide = portfolio.oiTriggerMode === 'negative-same-side';
+  const callQualifies = negativeSameSide ? callPct <= -threshold : callPct >= threshold;
+  const putQualifies = negativeSameSide ? putPct <= -threshold : putPct >= threshold;
+  // Do not choose arbitrarily if both sides qualify on the same snapshot.
+  if (callQualifies === putQualifies) return null;
+  const callBuy = negativeSameSide ? callQualifies : putQualifies;
+  const source = negativeSameSide
+    ? (callBuy ? 'call-oi-negative-to-call' : 'put-oi-negative-to-put')
+    : (callBuy ? 'put-oi-positive-to-call' : 'call-oi-positive-to-put');
+  const triggerText = negativeSameSide
+    ? (callBuy ? 'Call OI decrease → Call' : 'Put OI decrease → Put')
+    : (callBuy ? 'Put OI increase → Call' : 'Call OI increase → Put');
+  return {
+    direction: callBuy ? 'up' : 'down',
+    optionSide: callBuy ? 'ce' : 'pe',
+    window: { key: portfolio.oiWindow, label: labels[portfolio.oiWindow], window },
+    intensity: null,
+    label: `${triggerText} · ${Math.abs(callBuy ? callPct : putPct).toFixed(2)}%`,
+    triggerType: 'portfolio-oi-percentage',
+    oiMetric: callBuy ? 'call' : 'put',
+    oiValue: callBuy ? callPct : putPct,
+    oiThresholdMode: 'percentage',
+    oiThreshold: threshold,
+    oiTriggerSource: source,
   };
 }
 
@@ -221,13 +276,13 @@ function oiThresholdSignal(payload, portfolio) {
 }
 
 function preferredSignal(payload, portfolio) {
-  return portfolio.strategy === 'oi-threshold'
-    ? oiThresholdSignal(payload, portfolio)
-    : marketStrengthSignal(payload, portfolio);
+  if (portfolio.strategy === 'oi-threshold') return oiThresholdSignal(payload, portfolio);
+  if (portfolio.oiTriggerEnabled === true) return portfolioOiPercentageSignal(payload, portfolio);
+  return marketStrengthSignal(payload, portfolio);
 }
 
 function configuredOptionSide(signal, portfolio) {
-  if (signal.triggerType === 'opposite-side-oi-percentage') return signal.optionSide;
+  if (signal.triggerType === 'opposite-side-oi-percentage' || signal.triggerType === 'portfolio-oi-percentage') return signal.optionSide;
   if (portfolio.tradeSide === 'call') return 'ce';
   if (portfolio.tradeSide === 'put') return 'pe';
   if (portfolio.strategy === 'market-strength' && portfolio.reverseOrders) return signal.optionSide === 'ce' ? 'pe' : 'ce';
@@ -523,7 +578,7 @@ export function createPaperTradeEngine({ store, rules, contractLotSizes = {}, on
       oiThresholdMode: signal.oiThresholdMode || null,
       oiTriggerSource: signal.oiTriggerSource || null,
       oiOppositeSidePctThreshold: signal.oiOppositeSidePctThreshold ?? null,
-      oiThreshold: portfolio.strategy === 'oi-threshold' ? portfolio.oiThreshold : null,
+      oiThreshold: portfolio.strategy === 'oi-threshold' || portfolio.oiTriggerEnabled === true ? portfolio.oiThreshold : null,
       cooldownSecondsAtEntry: portfolio.cooldownSeconds,
       source: 'dhan-live-paper-simulation',
       paperOnly: true,

@@ -148,3 +148,9 @@
 - [x] Validate the mobile portrait settings layout, back interaction, frontend/docs parity, and paper-only safeguards before review publication.
 - [x] Publish the reviewed mobile settings-sheet navigation correction through a pull request.
 - [x] Merge approved PRs #24, #25, and #26 into main in order and verify their combined repository state.
+
+- [x] Add configurable Portfolio 1 triggers: negative Put OI change threshold for Call buys and negative Call OI change threshold for Put buys.
+- [x] Add configurable Portfolio 2 triggers: positive Put OI change threshold for Call buys and positive Call OI change threshold for Put buys.
+- [x] Add a separate live OI calculation view using farther strikes after excluding the three nearest market strikes on each side.
+- [x] Validate Portfolio 1/2 routing, exact farther-strike exclusion, dashboard separation, frontend/docs parity, durable history, and paper-only safeguards.
+- [ ] Publish the reviewed Portfolio 1/2 OI-trigger and farther-strike live-view changes through a pull request.

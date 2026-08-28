@@ -17,6 +17,8 @@
 
   "_strikesEachSide_comment": "How many strictly in-the-money contracts to track per option side. 3 = three Call strikes below the underlying and three Put strikes above it; ATM and OTM legs are excluded.",
   "strikesEachSide": 3,
+  "farOiStrikesEachSide": 3,
+  "farOiSkipStrikes": 3,
 
   "_pollIntervalMs_comment": "Observed production 429 responses show this Dhan account must treat Option Chain as one global request every 3 seconds. The backend serializes every underlying and uses a 100ms safety buffer; event-driven chart updates still come only from the active-band WebSocket.",
   "pollIntervalMs": 3100,
@@ -61,8 +63,8 @@
     "maxAliveSeconds": 0,
     "cooldownSeconds": 0,
     "portfolios": {
-      "portfolio1": { "enabled": true, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": false, "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
-      "portfolio2": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": true, "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
+      "portfolio1": { "enabled": true, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": false, "oiTriggerEnabled": true, "oiWindow": "m5", "oiThresholdMode": "percentage", "oiThreshold": 5, "oiTriggerMode": "negative-same-side", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
+      "portfolio2": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "strengthThreshold": 60, "reverseOrders": true, "oiTriggerEnabled": true, "oiWindow": "m5", "oiThresholdMode": "percentage", "oiThreshold": 5, "oiTriggerMode": "positive-opposite-side", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0 },
       "portfolio3": { "enabled": false, "lots": 10, "symbolEnabled": { "NIFTY": true, "SENSEX": true }, "tradeSide": "auto", "entryPremiumOffset": 0, "targetPoints": 2, "stopLossPoints": 5, "maxAliveSeconds": 0, "cooldownSeconds": 0, "oiWindow": "m5", "oiMetric": "combined", "oiThresholdMode": "number", "oiThreshold": 1, "oppositeSideOiPctEnabled": false, "oppositeSideOiPctThreshold": 1 }
     }
   }

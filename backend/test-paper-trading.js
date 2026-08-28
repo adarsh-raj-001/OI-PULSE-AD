@@ -13,7 +13,7 @@ class MemoryStore {
   isReady() { return true; }
 }
 
-const defaults = { enabled: true, lots: 10, symbolEnabled: { NIFTY: true, SENSEX: true }, marketHoursEnabled: true, strengthThreshold: 60, entryPremiumOffset: 0, targetPoints: 2, stopLossPoints: 5, maxAliveSeconds: 0, cooldownSeconds: 0 };
+const defaults = { enabled: true, lots: 10, symbolEnabled: { NIFTY: true, SENSEX: true }, marketHoursEnabled: true, strengthThreshold: 60, oiTriggerEnabled: false, entryPremiumOffset: 0, targetPoints: 2, stopLossPoints: 5, maxAliveSeconds: 0, cooldownSeconds: 0 };
 const contractLotSizes = { NIFTY: 65, SENSEX: 20 };
 
 function summary(callPrice = 100, putPrice = 120, quoteAt = 1_000) {
@@ -286,8 +286,8 @@ assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio1').op
 assert.equal(state.trades.find((trade) => trade.portfolioId === 'portfolio2').optionType, 'PUT', 'Portfolio 2 reverses upward strength into a Put');
 assert.equal(state.rules.portfolios.portfolio1.reverseOrders, false, 'Portfolio 1 defaults to follow-strength order routing');
 assert.equal(state.rules.portfolios.portfolio2.reverseOrders, true, 'Portfolio 2 defaults to reverse-strength order routing');
-assert.equal(state.rules.portfolios.portfolio1.oiWindow, undefined, 'Portfolio 1 must not retain OI trigger settings');
-assert.equal(state.rules.portfolios.portfolio2.oiMetric, undefined, 'Portfolio 2 must not retain OI trigger settings');
+assert.equal(state.rules.portfolios.portfolio1.oiTriggerEnabled, false, 'Portfolio 1 keeps its explicit strength-only fixture setting');
+assert.equal(state.rules.portfolios.portfolio2.oiTriggerMode, 'positive-opposite-side', 'Portfolio 2 retains its normalized OI trigger mode even when its fixture disables OI routing');
 const oiTrade = state.trades.find((trade) => trade.portfolioId === 'portfolio3');
 assert.equal(oiTrade.optionType, 'PUT', 'Portfolio 3 honours its configured trade-side override');
 assert.equal(oiTrade.oiMetric, 'difference');
@@ -389,4 +389,45 @@ const equalPercentEngine = createPaperTradeEngine({
 await equalPercentEngine.restore();
 await equalPercentEngine.process('NIFTY', { windows: { m5: { referenceMode: 'clock-aligned-baseline', callItmOiChangePct: 1.3, putItmOiChangePct: 1.3 } } }, summary(100, 120, 92_000), 92_000);
 assert.equal(equalPercentEngine.snapshot().trades.length, 0, 'equal Call and Put percentage gains must not create an ambiguous opposite-side paper entry');
+function oiPercentagePayload(callPct, putPct) {
+  return {
+    windows: {
+      m5: {
+        referenceMode: 'exact-window',
+        callItmOiChangePct: callPct,
+        putItmOiChangePct: putPct,
+      },
+    },
+  };
+}
+
+async function assertPortfolioOiRoute(portfolioId, oiTriggerMode, callPct, putPct, expectedOptionType, expectedSource) {
+  const store = new MemoryStore();
+  const engine = createPaperTradeEngine({
+    store,
+    rules: {
+      marketHoursEnabled: true,
+      portfolios: {
+        portfolio1: { ...defaults, enabled: false },
+        portfolio2: { ...defaults, enabled: false },
+        portfolio3: { ...defaults, enabled: false },
+        [portfolioId]: { ...defaults, enabled: true, oiTriggerEnabled: true, oiWindow: 'm5', oiThresholdMode: 'percentage', oiThreshold: 5, oiTriggerMode },
+      },
+    },
+    contractLotSizes,
+  });
+  await engine.restore();
+  await engine.process('NIFTY', oiPercentagePayload(callPct, putPct), summary(100, 120, 80_000), 80_000);
+  const trade = engine.snapshot().trades[0];
+  assert.equal(trade.optionType, expectedOptionType, `${portfolioId} must route the qualifying OI percentage to the requested option side`);
+  assert.equal(trade.oiTriggerSource, expectedSource, `${portfolioId} must retain the OI trigger source in the paper audit`);
+  assert.equal(trade.oiThresholdMode, 'percentage');
+  assert.equal(trade.oiThreshold, 5);
+}
+
+await assertPortfolioOiRoute('portfolio1', 'negative-same-side', -6, -2, 'CALL', 'call-oi-negative-to-call');
+await assertPortfolioOiRoute('portfolio1', 'negative-same-side', -2, -6, 'PUT', 'put-oi-negative-to-put');
+await assertPortfolioOiRoute('portfolio2', 'positive-opposite-side', 2, 6, 'CALL', 'put-oi-positive-to-call');
+await assertPortfolioOiRoute('portfolio2', 'positive-opposite-side', 6, 2, 'PUT', 'call-oi-positive-to-put');
+
 console.log('paper trading tests passed');
