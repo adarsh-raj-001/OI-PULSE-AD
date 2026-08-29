@@ -154,3 +154,14 @@
 - [x] Add a separate live OI calculation view using farther strikes after excluding the three nearest market strikes on each side.
 - [x] Validate Portfolio 1/2 routing, exact farther-strike exclusion, dashboard separation, frontend/docs parity, durable history, and paper-only safeguards.
 - [x] Publish the reviewed Portfolio 1/2 OI-trigger and farther-strike live-view changes through a pull request.
+- [x] Merge approved PR #27 into main and verify the combined Portfolio 1/2 OI trigger and Far-strike OI implementation.
+- [x] Inspect Render startup logs and correlate the paper-trading 503 with the merged source line.
+- [ ] Reproduce the Render startup failure locally without accessing or exposing secrets.
+- [ ] Apply and validate any required runtime fix on an isolated branch.
+- [ ] Report the Render diagnosis and safe deployment step.
+
+- [x] Confirm Render database environment-variable mapping and startup reset ordering after resumed investigation.
+
+- [ ] Harden startup so temporary PostgreSQL unavailability defers paper-session reset instead of terminating the Render service.
+- [ ] Add deterministic coverage for deferred session reset and run the complete backend regression suite.
+- [ ] Prepare the isolated Render startup fix for review without deploying.
