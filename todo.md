@@ -156,12 +156,20 @@
 - [x] Publish the reviewed Portfolio 1/2 OI-trigger and farther-strike live-view changes through a pull request.
 - [x] Merge approved PR #27 into main and verify the combined Portfolio 1/2 OI trigger and Far-strike OI implementation.
 - [x] Inspect Render startup logs and correlate the paper-trading 503 with the merged source line.
-- [ ] Reproduce the Render startup failure locally without accessing or exposing secrets.
-- [ ] Apply and validate any required runtime fix on an isolated branch.
-- [ ] Report the Render diagnosis and safe deployment step.
+- [x] Reproduce the Render startup failure locally without accessing or exposing secrets.
+- [x] Apply and validate any required runtime fix on an isolated branch.
+- [x] Report the Render diagnosis and safe deployment step.
 
 - [x] Confirm Render database environment-variable mapping and startup reset ordering after resumed investigation.
 
-- [ ] Harden startup so temporary PostgreSQL unavailability defers paper-session reset instead of terminating the Render service.
-- [ ] Add deterministic coverage for deferred session reset and run the complete backend regression suite.
-- [ ] Prepare the isolated Render startup fix for review without deploying.
+- [x] Harden startup so temporary PostgreSQL unavailability defers paper-session reset instead of terminating the Render service.
+- [x] Add deterministic coverage for deferred session reset and run the complete backend regression suite.
+- [x] Prepare the isolated Render startup fix for review without deploying.
+
+- [x] Diagnose why paper-trade records are missing from the Paper Trades view and why Portfolio 1/2/3 settings are not visible.
+- [ ] Fix paper-trade payload/rendering or backend readiness behavior while preserving paper-only safeguards.
+- [x] Validate portfolio settings, paper records, frontend/docs parity, and live endpoint behavior.
+
+- [ ] Reproduce the deployed settings-save error caused by the missing `paperPortfolioOiTriggerEnabledControl` DOM element.
+- [ ] Fix settings control lookup/rendering and save behavior for Portfolio 1, Portfolio 2, and Portfolio 3.
+- [ ] Validate the settings flow, backend save response, frontend/docs parity, and paper-only safeguards.

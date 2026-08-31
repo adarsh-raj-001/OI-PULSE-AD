@@ -133,6 +133,7 @@ assert.match(html, /data-paper-exit-id/);
 assert.match(html, /Exit now · paper only/);
 assert.match(html, /Closed manually \(paper only\)/);
 assert.match(html, /api\/paper-trades\/\$\{encodeURIComponent\(tradeId\)\}\/exit/);
+assert.match(html, /id="paperPortfolioOiTriggerEnabledControl"/);
 assert.match(html, /id="paperTradeSide"/);
 assert.match(html, /id="paperOiWindow"/);
 assert.match(html, /id="paperOiMetric"/);
