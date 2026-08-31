@@ -26,6 +26,9 @@ const source = config.dataSource === 'dhan' ? dhanSource : nseFreeSource;
 const history = Object.fromEntries(config.symbols.map((s) => [s.name, []]));
 const historyResetInFlight = new Set();
 let fullSessionResetInFlight = null;
+let deferredSessionResetKey = null;
+let nextSessionResetRetryAt = 0;
+const SESSION_RESET_RETRY_MS = 30_000;
 const sessionResetBaselinePending = new Set();
 
 // Postgres is optional at code level so local/demo development remains simple.
@@ -417,7 +420,24 @@ async function syncMarketSession(timestamp = Date.now(), force = false) {
     timestamp,
   });
   if (rules.sessionResetEnabled !== false && next.regularSessionActive) {
-    await resetFullSessionHistory(next.localDate, timestamp);
+    const paperStorage = paperTrading.snapshot().storage;
+    const resetDeferred = deferredSessionResetKey === next.localDate && timestamp < nextSessionResetRetryAt;
+    if (paperStorage?.status === 'ready' && !resetDeferred) {
+      try {
+        await resetFullSessionHistory(next.localDate, timestamp);
+        deferredSessionResetKey = null;
+        nextSessionResetRetryAt = 0;
+      } catch (err) {
+        if (err?.statusCode !== 503) throw err;
+        deferredSessionResetKey = next.localDate;
+        nextSessionResetRetryAt = timestamp + SESSION_RESET_RETRY_MS;
+        console.warn(`[session-reset] deferred until durable PostgreSQL storage is ready: ${err.message}`);
+      }
+    } else if (paperStorage?.status !== 'ready' && !resetDeferred) {
+      deferredSessionResetKey = next.localDate;
+      nextSessionResetRetryAt = timestamp + SESSION_RESET_RETRY_MS;
+      console.warn(`[session-reset] deferred because paper storage is ${paperStorage?.status || 'unavailable'}`);
+    }
   }
   const changed = next.active !== marketSessionState.active
     || next.enabled !== marketSessionState.enabled
