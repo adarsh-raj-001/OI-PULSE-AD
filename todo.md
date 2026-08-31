@@ -170,6 +170,14 @@
 - [ ] Fix paper-trade payload/rendering or backend readiness behavior while preserving paper-only safeguards.
 - [x] Validate portfolio settings, paper records, frontend/docs parity, and live endpoint behavior.
 
-- [ ] Reproduce the deployed settings-save error caused by the missing `paperPortfolioOiTriggerEnabledControl` DOM element.
-- [ ] Fix settings control lookup/rendering and save behavior for Portfolio 1, Portfolio 2, and Portfolio 3.
-- [ ] Validate the settings flow, backend save response, frontend/docs parity, and paper-only safeguards.
+- [x] Reproduce the deployed settings-save error caused by the missing `paperPortfolioOiTriggerEnabledControl` DOM element.
+- [x] Fix settings control lookup/rendering and save behavior for Portfolio 1, Portfolio 2, and Portfolio 3.
+- [x] Validate the settings flow, backend save response, frontend/docs parity, and paper-only safeguards.
+
+- [x] Push the validated Render startup and paper-settings fixes to GitHub.
+- [x] Merge the fixes into `main` and allow Render auto-deploy to start.
+- [x] Verify the new Render deploy, live paper records, and settings save behavior.
+
+- [ ] Reproduce the live Paper Trades section showing no visible records despite the backend returning paper-trade data.
+- [ ] Trace selected-portfolio filtering, DOM rendering, and live-page script behavior for paper records.
+- [ ] Correct the Paper Trades rendering and deploy the verified fix.
